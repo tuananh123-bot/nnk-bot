@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+neneka_state.json
+neneka_memories.json
+run_cli.bat
+run_discord.bat
+
