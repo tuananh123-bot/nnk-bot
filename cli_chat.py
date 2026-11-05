@@ -9,14 +9,20 @@ from cognitive_engine import CognitiveEngine
 
 def main():
     load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        print("[LỖI] Không tìm thấy GEMINI_API_KEY trong file .env!")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
+    if not gemini_key and not groq_key:
+        print("[LỖI] Cần ít nhất GEMINI_API_KEY hoặc GROQ_API_KEY trong file .env!")
         return
 
     state_mgr = StateManager()
     memory_sys = MemorySystem()
-    engine = CognitiveEngine(api_key=api_key, state_mgr=state_mgr, memory_sys=memory_sys)
+    engine = CognitiveEngine(
+        gemini_api_key=gemini_key,
+        groq_api_key=groq_key,
+        state_mgr=state_mgr,
+        memory_sys=memory_sys
+    )
 
     show_cot = True
 

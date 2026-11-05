@@ -13,24 +13,30 @@ load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 if not DISCORD_TOKEN:
     raise RuntimeError("Chưa tìm thấy DISCORD_TOKEN trong file .env!")
-if not GEMINI_API_KEY:
-    raise RuntimeError("Chưa tìm thấy GEMINI_API_KEY trong file .env!")
+if not GEMINI_API_KEY and not GROQ_API_KEY:
+    raise RuntimeError("Cần ít nhất GEMINI_API_KEY hoặc GROQ_API_KEY trong file .env!")
 
 # Khởi tạo các hệ thống
 state_mgr = StateManager()
 memory_sys = MemorySystem()
-engine = CognitiveEngine(api_key=GEMINI_API_KEY, state_mgr=state_mgr, memory_sys=memory_sys)
+engine = CognitiveEngine(
+    gemini_api_key=GEMINI_API_KEY,
+    groq_api_key=GROQ_API_KEY,
+    state_mgr=state_mgr,
+    memory_sys=memory_sys
+)
 
 # Cấu hình Discord Bot
 intents = discord.Intents.default()
 intents.message_content = True
 
 def get_prefix(bot, message):
-    """Hỗ trợ cả 2 prefix: '!n ' và '!n' (shorthand)"""
-    return commands.when_mentioned_or("!n ", "!n")(bot, message)
+    """Hỗ trợ các prefix: '!n ', '!n', 'n! ', 'n!'"""
+    return commands.when_mentioned_or("!n ", "!n", "n! ", "n!")(bot, message)
 
 bot = commands.Bot(
     command_prefix=get_prefix,
@@ -184,8 +190,8 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    # Xử lý các command có tiền tố !n
-    if message.content.startswith("!n"):
+    # Xử lý các command có tiền tố !n hoặc n!
+    if message.content.startswith(("!n", "n!")):
         await bot.process_commands(message)
         return
 
@@ -235,6 +241,8 @@ async def on_message(message: discord.Message):
             await message.reply(reply_text)
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"[Error processing message]: {e}")
             await message.reply("Fufu... Có một chút nhiễu loạn trong luồng ma lực của ta vừa xảy ra. Cậu nói lại được không?")
 

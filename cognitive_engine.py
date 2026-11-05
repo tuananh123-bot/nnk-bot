@@ -1,6 +1,6 @@
-
 # cognitive_engine.py
 import json
+import os
 from datetime import datetime
 from pydantic import BaseModel, Field
 from google import genai
@@ -74,19 +74,52 @@ class NenekaCognitiveOutput(BaseModel):
     )
 
 class CognitiveEngine:
-    def __init__(self, api_key: str, state_mgr: StateManager, memory_sys: MemorySystem, model_name: str = "gemini-3.5-flash-lite"):
-        self.client = genai.Client(api_key=api_key)
+    def __init__(
+        self,
+        gemini_api_key: str = None,
+        groq_api_key: str = None,
+        state_mgr: StateManager = None,
+        memory_sys: MemorySystem = None,
+        model_name: str = "gemini-3.5-flash-lite",
+        api_key: str = None
+    ):
+        # Hỗ trợ tương thích ngược nếu gọi bằng engine = CognitiveEngine(api_key=...)
+        if api_key and not gemini_api_key:
+            gemini_api_key = api_key
+
+        self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
+        self.groq_api_key = groq_api_key or os.getenv("GROQ_API_KEY")
         self.state_mgr = state_mgr
         self.memory_sys = memory_sys
         self.model_name = model_name
-        self.fallback_models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
+        self.gemini_fallback_models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
+        self.groq_fallback_models = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
 
-    def _call_model(self, system_instruction: str, user_message: str):
-        models_to_try = [self.model_name] + [m for m in self.fallback_models if m != self.model_name]
+        # Khởi tạo Gemini client
+        self.gemini_client = None
+        if self.gemini_api_key:
+            try:
+                self.gemini_client = genai.Client(api_key=self.gemini_api_key)
+            except Exception as e:
+                print(f"[Warning] Khởi tạo Gemini Client thất bại: {e}")
+
+        # Khởi tạo Groq client
+        self.groq_client = None
+        if self.groq_api_key:
+            try:
+                from groq import Groq
+                self.groq_client = Groq(api_key=self.groq_api_key)
+            except Exception as e:
+                print(f"[Warning] Khởi tạo Groq Client thất bại: {e}")
+
+    def _call_gemini(self, system_instruction: str, user_message: str) -> NenekaCognitiveOutput:
+        if not self.gemini_client:
+            raise RuntimeError("Gemini Client chưa được cấu hình!")
+        models_to_try = [self.model_name] + [m for m in self.gemini_fallback_models if m != self.model_name]
         last_error = None
         for model in models_to_try:
             try:
-                response = self.client.models.generate_content(
+                response = self.gemini_client.models.generate_content(
                     model=model,
                     contents=f"Tin nhắn của người dùng: {user_message}",
                     config=types.GenerateContentConfig(
@@ -96,7 +129,44 @@ class CognitiveEngine:
                         temperature=0.8,
                     ),
                 )
-                return response
+                if hasattr(response, "parsed") and response.parsed is not None:
+                    return response.parsed
+                else:
+                    raw_text = (response.text or "").strip()
+                    if raw_text.startswith("```"):
+                        lines = raw_text.splitlines()
+                        if lines and lines[0].startswith("```"):
+                            lines = lines[1:]
+                        if lines and lines[-1].startswith("```"):
+                            lines = lines[:-1]
+                        raw_text = "\n".join(lines).strip()
+                    result_data = json.loads(raw_text)
+                    return NenekaCognitiveOutput(**result_data)
+            except Exception as e:
+                last_error = e
+                continue
+        raise last_error
+
+    def _call_groq(self, system_instruction: str, user_message: str) -> NenekaCognitiveOutput:
+        if not self.groq_client:
+            raise RuntimeError("Groq Client chưa được cấu hình!")
+        schema_json = json.dumps(NenekaCognitiveOutput.model_json_schema(), ensure_ascii=False)
+        groq_sys_prompt = f"{system_instruction}\n\nBẮT BUỘC: Trả về DUY NHẤT một chuỗi JSON hợp lệ tuân theo schema sau:\n{schema_json}"
+        
+        last_error = None
+        for model in self.groq_fallback_models:
+            try:
+                resp = self.groq_client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": groq_sys_prompt},
+                        {"role": "user", "content": user_message}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.75
+                )
+                content = resp.choices[0].message.content
+                return NenekaCognitiveOutput.model_validate_json(content)
             except Exception as e:
                 last_error = e
                 continue
@@ -132,21 +202,31 @@ class CognitiveEngine:
 4. Lời thoại (spoken_response): Tuyệt đối KHÔNG viết văn trợ lý ảo sáo rỗng. Hãy nói chuyện tự nhiên bằng 2 - 4 câu đắt giá, giàu cảm xúc, có nhạc điệu anime theo các mẫu Few-shot.
 """
 
-        response = self._call_model(system_instruction, user_message)
+        cognitive_result = None
+        gemini_error = None
 
-        if hasattr(response, "parsed") and response.parsed is not None:
-            cognitive_result = response.parsed
-        else:
-            raw_text = (response.text or "").strip()
-            if raw_text.startswith("```"):
-                lines = raw_text.splitlines()
-                if lines and lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines and lines[-1].startswith("```"):
-                    lines = lines[:-1]
-                raw_text = "\n".join(lines).strip()
-            result_data = json.loads(raw_text)
-            cognitive_result = NenekaCognitiveOutput(**result_data)
+        # 1. Ưu tiên gọi Gemini nếu có key
+        if self.gemini_client:
+            try:
+                cognitive_result = self._call_gemini(system_instruction, user_message)
+            except Exception as e:
+                gemini_error = e
+                print(f"[Engine Warning] Gemini gặp sự cố: {e}. Đang chuyển sang Groq dự phòng...")
+
+        # 2. Tự động fallback sang Groq nếu Gemini lỗi hoặc chưa có
+        if cognitive_result is None and self.groq_client:
+            try:
+                cognitive_result = self._call_groq(system_instruction, user_message)
+            except Exception as groq_error:
+                print(f"[Engine Error] Groq cũng gặp sự cố: {groq_error}")
+                if gemini_error:
+                    raise RuntimeError(f"Cả Gemini ({gemini_error}) và Groq ({groq_error}) đều thất bại!")
+                raise groq_error
+
+        if cognitive_result is None:
+            if gemini_error:
+                raise gemini_error
+            raise RuntimeError("Không có AI Provider nào hoạt động! Hãy kiểm tra GEMINI_API_KEY hoặc GROQ_API_KEY trong .env.")
 
         # Cập nhật State & Memory tự động
         self.state_mgr.update_state(
