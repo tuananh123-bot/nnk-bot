@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from state_manager import StateManager
 from memory_system import MemorySystem
 from cognitive_engine import CognitiveEngine
+from config_persona import BOND_STORIES
 
 load_dotenv()
 
@@ -169,6 +170,112 @@ async def cmd_listchannels(ctx):
         lines.append(f"• {ch.mention if ch else f'ID: {cid}'}")
     await ctx.reply("📋 **Các kênh đang bật tự động trả lời:**\n" + "\n".join(lines))
 
+def make_bond_embed(bond_id: int) -> discord.Embed:
+    info = BOND_STORIES.get(bond_id)
+    if not info:
+        return None
+    embed = discord.Embed(
+        title=f"✨ {info['title']}",
+        description=info["story"],
+        color=0xff79c6
+    )
+    embed.set_footer(text="Ký ức liên kết Neneka • Princess Connect! Re:Dive")
+    return embed
+
+@bot.command(name="gift", aliases=["tangqua"])
+async def cmd_gift(ctx, *, gift_name: str = None):
+    """Tặng quà/điểm tâm Landosol cho Neneka để tăng hảo cảm"""
+    if not gift_name:
+        await ctx.reply("Fufu... Cậu định tặng gì cho ta thế? Hãy dùng lệnh: `!n gift <tên món quà>` nhé.")
+        return
+
+    async with ctx.typing():
+        try:
+            result = await asyncio.to_thread(engine.process_gift, gift_name)
+
+            tier = state_mgr.get_current_tier()
+            pts = state_mgr.state.affection
+            filled = int((pts / 1000) * 12)
+            bar = "█" * filled + "░" * (12 - filled)
+
+            embed = discord.Embed(
+                title=f"🎁 Quà Tặng Landosol: {gift_name}",
+                description=f"{result.action_gesture} {result.spoken_response}",
+                color=0xf1c40f
+            )
+            embed.add_field(
+                name="💜 Hảo cảm nhận được",
+                value=f"+{result.affection_delta} điểm | Trạng thái: `{result.selected_emotion}`",
+                inline=False
+            )
+            embed.add_field(
+                name="📊 Tiến độ hảo cảm",
+                value=f"[{bar}] **{pts}/1000** (Cấp {tier['tier_id']}: *{tier['name']}*)",
+                inline=False
+            )
+            await ctx.reply(embed=embed)
+
+            # Nếu có Bond Story mới mở khóa
+            if getattr(result, "newly_unlocked_bonds", None):
+                for bid in result.newly_unlocked_bonds:
+                    b_embed = make_bond_embed(bid)
+                    if b_embed:
+                        await ctx.send(
+                            content="🎉 **CHÚC MỪNG!** Cậu vừa mở khóa một mẩu ký ức mới với Neneka!",
+                            embed=b_embed
+                        )
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[Error processing gift]: {e}")
+            await ctx.reply("Fufu... Có chút ma lực nhiễu loạn khi nhận món quà này. Cậu thử lại sau nhé.")
+
+@bot.command(name="bond", aliases=["story", "kiniem"])
+async def cmd_bond(ctx, bond_num: int = None):
+    """Xem hoặc đọc lại các mẩu truyện Ký ức Liên kết (Bond Stories)"""
+    unlocked = state_mgr.state.unlocked_bonds
+    current_pts = state_mgr.state.affection
+
+    if bond_num is None:
+        embed = discord.Embed(
+            title="📖 Ký Ức Liên Kết - Utsushimi Neneka (Bond Stories)",
+            description="Tăng hảo cảm thông qua trò chuyện và tặng quà để mở khóa các mẩu truyện riêng tư với Neneka!",
+            color=0x9b59b6
+        )
+        for bid, info in BOND_STORIES.items():
+            if bid in unlocked:
+                status_icon = "✅ ĐÃ MỞ KHÓA"
+                val = f"*{info['summary']}*\n👉 Gõ `!n bond {bid}` để đọc lại"
+            else:
+                status_icon = f"🔒 KHÓA (Cần {info['req_affection']} Hảo cảm)"
+                val = f"*{info['summary']}* (Hiện tại: {current_pts}/{info['req_affection']})"
+
+            embed.add_field(
+                name=f"[{status_icon}] {info['title']}",
+                value=val,
+                inline=False
+            )
+        embed.set_footer(text="Dùng lệnh '!n bond <1-5>' để đọc mẩu truyện tương ứng.")
+        await ctx.reply(embed=embed)
+        return
+
+    if bond_num not in BOND_STORIES:
+        await ctx.reply("❌ Neneka hiện chỉ có từ **Bond 1** đến **Bond 5** thôi nhé cậu hiệp sĩ.")
+        return
+
+    if bond_num not in unlocked:
+        req = BOND_STORIES[bond_num]['req_affection']
+        await ctx.reply(
+            f"🔒 **Mẩu truyện này chưa được mở khóa!**\n"
+            f"Neneka yêu cầu **{req} điểm hảo cảm** (Hiện tại của cậu: **{current_pts}/1000**).\n"
+            f"Hãy trò chuyện thêm hoặc dùng `!n gift <món quà>` để gia tăng hảo cảm nhé!"
+        )
+        return
+
+    b_embed = make_bond_embed(bond_num)
+    await ctx.reply(embed=b_embed)
+
 @bot.command(name="help")
 async def cmd_help(ctx):
     """Hiển thị hướng dẫn các lệnh"""
@@ -178,6 +285,8 @@ async def cmd_help(ctx):
         color=0x9b59b6
     )
     embed.add_field(name="`!n status`", value="Xem chỉ số hảo cảm, cảm xúc, bảo bọc hiện tại.", inline=False)
+    embed.add_field(name="`!n gift <món quà>`", value="Tặng điểm tâm/quà Landosol cho Neneka để tăng hảo cảm.", inline=False)
+    embed.add_field(name="`!n bond [1-5]`", value="Xem danh sách hoặc đọc các mẩu truyện Ký ức Liên kết đã mở khóa.", inline=False)
     embed.add_field(name="`!n cot`", value="Bật/Tắt hiển thị luồng suy nghĩ nội tâm của Neneka.", inline=False)
     embed.add_field(name="`!n reset`", value="Reset điểm hảo cảm và ký ức về trạng thái ban đầu.", inline=False)
     embed.add_field(name="`!n addchannel [#kênh]`", value="Thêm kênh vào danh sách tự động trả lời (không cần @mention).\nBỏ trống để chọn kênh hiện tại.", inline=False)
@@ -239,6 +348,16 @@ async def on_message(message: discord.Message):
                 reply_text = reply_text[:1990] + "..."
 
             await message.reply(reply_text)
+
+            # Nếu cuộc trò chuyện kích hoạt mở khóa Bond Story mới
+            if getattr(result, "newly_unlocked_bonds", None):
+                for bid in result.newly_unlocked_bonds:
+                    b_embed = make_bond_embed(bid)
+                    if b_embed:
+                        await message.channel.send(
+                            content="🎉 **CHÚC MỪNG!** Cậu vừa mở khóa một mẩu ký ức mới với Neneka!",
+                            embed=b_embed
+                        )
 
         except Exception as e:
             import traceback

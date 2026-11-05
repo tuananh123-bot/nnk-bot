@@ -1,8 +1,8 @@
 # state_manager.py
 import json
 import os
-from dataclasses import dataclass, asdict
-from config_persona import AFFECTION_TIERS, EMOTION_STATES
+from dataclasses import dataclass, asdict, field, fields
+from config_persona import AFFECTION_TIERS, EMOTION_STATES, BOND_STORIES
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "neneka_state.json")
 
@@ -13,6 +13,7 @@ class CharacterState:
     trust_level: int = 30                 # 0 - 100
     protective_instinct: int = 40        # Mức độ muốn che chở hiện tại (0 - 100)
     interaction_count: int = 0
+    unlocked_bonds: list[int] = field(default_factory=lambda: [1])
 
 class StateManager:
     def __init__(self, filepath: str = STATE_FILE):
@@ -24,7 +25,13 @@ class StateManager:
             try:
                 with open(self.filepath, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                return CharacterState(**data)
+                valid_keys = {f.name for f in fields(CharacterState)}
+                filtered_data = {k: v for k, v in data.items() if k in valid_keys}
+                cs = CharacterState(**filtered_data)
+                # Đảm bảo Bond 1 luôn mở khóa
+                if 1 not in cs.unlocked_bonds:
+                    cs.unlocked_bonds.append(1)
+                return cs
             except Exception:
                 pass
         return CharacterState()
@@ -41,7 +48,20 @@ class StateManager:
                 return {"tier_id": tier_id, **info}
         return {"tier_id": 5, **AFFECTION_TIERS[5]}
 
-    def update_state(self, affection_delta: int, new_emotion: str, instinct_delta: int = 0):
+    def check_and_unlock_bonds(self) -> list[int]:
+        """Kiểm tra và mở khóa Bond Story mới nếu đủ điểm hảo cảm"""
+        pts = self.state.affection
+        newly_unlocked = []
+        for bond_id, info in BOND_STORIES.items():
+            if pts >= info["req_affection"] and bond_id not in self.state.unlocked_bonds:
+                self.state.unlocked_bonds.append(bond_id)
+                newly_unlocked.append(bond_id)
+        if newly_unlocked:
+            self.state.unlocked_bonds.sort()
+            self.save_state()
+        return newly_unlocked
+
+    def update_state(self, affection_delta: int, new_emotion: str, instinct_delta: int = 0) -> list[int]:
         # Giới hạn biên độ thay đổi mỗi lượt để tăng tính chân thực (-15 đến +20)
         clamped_delta = max(-15, min(20, affection_delta))
         self.state.affection = max(0, min(1000, self.state.affection + clamped_delta))
@@ -51,7 +71,9 @@ class StateManager:
             
         self.state.protective_instinct = max(0, min(100, self.state.protective_instinct + instinct_delta))
         self.state.interaction_count += 1
+        new_bonds = self.check_and_unlock_bonds()
         self.save_state()
+        return new_bonds
 
     def render_affection_bar(self, width: int = 20) -> str:
         pts = self.state.affection

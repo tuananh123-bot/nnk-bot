@@ -28,11 +28,13 @@ AUTO_REPLY_CHANNELS=1546061652967948358
 - Chạy trên Discord: `python main.py` (hoặc click `run_discord.bat`)
 - Chạy thử nghiệm trên Terminal: `python cli_chat.py` (hoặc click `run_cli.bat`)
 
-## Lệnh trên Discord
-- `!n status` : Xem thanh hảo cảm và cảm xúc hiện tại.
+## Lệnh trên Discord (hỗ trợ cả prefix `!n` và `n!`)
+- `!n status` : Xem thanh hảo cảm, cảm xúc và tiến độ quan hệ hiện tại.
+- `!n gift <món quà>` : Tặng điểm tâm, bánh ngọt, trà Landosol cho Neneka để tăng hảo cảm (+10 đến +25 điểm).
+- `!n bond [1-5]` : Xem danh sách hoặc đọc các mẩu truyện Ký ức Liên kết (Bond Stories) đã mở khóa.
 - `!n cot` : Bật/Tắt hiển thị suy nghĩ nội tâm (Chain-of-Thought).
 - `!n reset` : Reset hảo cảm và ký ức về mặc định.
 - `!n addchannel` : Thêm kênh vào danh sách tự động trả lời (không cần @mention).
 - `!n removechannel` : Xóa kênh khỏi danh sách tự động trả lời.
 - `!n listchannels` : Xem danh sách kênh tự động trả lời.
-- `!n help` : Xem trợ giúp.
+- `!n help` : Xem menu trợ giúp.

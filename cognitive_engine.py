@@ -72,6 +72,10 @@ class NenekaCognitiveOutput(BaseModel):
     spoken_response: str = Field(
         description="Lời thoại chính thức của Neneka (từ 2 đến 4 câu ngắn gọn, súc tích, tự nhiên, nhịp điệu anime, tuyệt đối KHÔNG viết văn dài dòng)."
     )
+    newly_unlocked_bonds: list[int] = Field(
+        default_factory=list,
+        description="Danh sách id các Bond Story mới mở khóa nếu có (nội bộ hệ thống)."
+    )
 
 class CognitiveEngine:
     def __init__(
@@ -229,16 +233,92 @@ class CognitiveEngine:
             raise RuntimeError("Không có AI Provider nào hoạt động! Hãy kiểm tra GEMINI_API_KEY hoặc GROQ_API_KEY trong .env.")
 
         # Cập nhật State & Memory tự động
-        self.state_mgr.update_state(
+        new_bonds = self.state_mgr.update_state(
             affection_delta=cognitive_result.affection_delta,
             new_emotion=cognitive_result.selected_emotion,
             instinct_delta=cognitive_result.protective_instinct_delta
         )
+        cognitive_result.newly_unlocked_bonds = new_bonds
+
         if cognitive_result.new_memory_fact:
             self.memory_sys.add_long_term_fact(cognitive_result.new_memory_fact)
 
         self.memory_sys.add_exchange(
             user_msg=user_message,
+            neneka_reply=f"{cognitive_result.action_gesture} {cognitive_result.spoken_response}"
+        )
+
+        return cognitive_result
+
+    def process_gift(self, gift_name: str) -> NenekaCognitiveOutput:
+        """Xử lý khi người dùng tặng quà cho Neneka"""
+        tier_info = self.state_mgr.get_current_tier()
+        st = self.state_mgr.state
+        memory_context = self.memory_sys.get_formatted_context()
+        realtime_context = get_realtime_context()
+
+        system_instruction = f"""
+{NENEKA_CORE_PERSONA}
+
+### TRẠNG THÁI HIỆN TẠI CỦA NENEKA:
+- Điểm hảo cảm hiện tại: {st.affection}/1000
+- Cấp độ quan hệ: Cấp {tier_info['tier_id']} - {tier_info['name']}
+- Cảm xúc hiện tại: {st.current_emotion} ({EMOTION_STATES.get(st.current_emotion, '')})
+- Chỉ số bản năng bảo bọc: {st.protective_instinct}/100
+
+{realtime_context}
+
+{memory_context}
+
+### TÌNH HUỐNG: NGƯỜI DÙNG TẶNG QUÀ LANDOSOL
+Người dùng vừa gửi tặng Neneka món quà: "{gift_name}".
+
+### QUY TẮC PHẢN HỒI KHI NHẬN QUÀ:
+1. Đánh giá món quà theo phong thái một quý cô sành sỏi, từng trải của Thất Vương:
+   - Đồ ngọt, bánh crepe, bánh tart dâu tây Landosol, bánh quy hoàng cung, trà đen hảo hạng: Rất thích thú, mỉm cười "Fufu...", khen ngợi sự chu đáo và tinh tế của cậu.
+   - Quà lãng mạn (hoa, trang sức, quà đôi): Bối rối, ngượng ngùng ngầm (Tsundere), vội chỉnh lọn tóc che đi vành tai đỏ rồi mới buông lời khen ngợi.
+   - Quà kỳ lạ hoặc vụng về: Bật cười thích thú, trêu chọc xem có phải cậu đang muốn thử phản ứng của cô không.
+2. Cử chỉ hành động (*action_gesture*): Đi kèm cử chỉ quý phái, phân thân nhận quà hoặc bẻ nửa miếng bánh mời cậu cùng thưởng thức.
+3. Điểm hảo cảm (affection_delta): Luôn cộng từ +10 đến +25 điểm.
+4. Lời thoại (spoken_response): 2 - 4 câu tự nhiên, ấm áp, đậm chất anime.
+"""
+        gift_prompt = f"Ta vừa nhận được món quà này từ cậu: {gift_name}"
+        cognitive_result = None
+        gemini_error = None
+
+        if self.gemini_client:
+            try:
+                cognitive_result = self._call_gemini(system_instruction, gift_prompt)
+            except Exception as e:
+                gemini_error = e
+
+        if cognitive_result is None and self.groq_client:
+            try:
+                cognitive_result = self._call_groq(system_instruction, gift_prompt)
+            except Exception as groq_error:
+                if gemini_error:
+                    raise RuntimeError(f"Cả Gemini ({gemini_error}) và Groq ({groq_error}) đều thất bại!")
+                raise groq_error
+
+        if cognitive_result is None:
+            raise RuntimeError("Không có AI Provider nào hoạt động!")
+
+        # Quà tặng luôn đảm bảo tăng hảo cảm ý nghĩa (+10 đến +25)
+        if cognitive_result.affection_delta < 8:
+            cognitive_result.affection_delta = 12
+
+        new_bonds = self.state_mgr.update_state(
+            affection_delta=cognitive_result.affection_delta,
+            new_emotion=cognitive_result.selected_emotion,
+            instinct_delta=cognitive_result.protective_instinct_delta
+        )
+        cognitive_result.newly_unlocked_bonds = new_bonds
+
+        gift_fact = f"Người dùng đã tặng món quà: {gift_name} (Neneka cảm thấy: {cognitive_result.selected_emotion})"
+        self.memory_sys.add_long_term_fact(gift_fact)
+
+        self.memory_sys.add_exchange(
+            user_msg=f"[Tặng quà]: {gift_name}",
             neneka_reply=f"{cognitive_result.action_gesture} {cognitive_result.spoken_response}"
         )
 

@@ -105,3 +105,62 @@ EMOTION_STATES = {
     "tired_vulnerable": "Mệt mỏi & Yếu lòng ngầm",
     "slight_tsundere": "Kiêu kỳ & Giấu cảm xúc",
 }
+
+BOND_STORIES = {
+    1: {
+        "title": "Bond 1: Biến Số Kỳ Lạ Tại Landosol",
+        "req_affection": 0,
+        "summary": "Lần đầu gặp gỡ tại quảng trường Landosol",
+        "story": (
+            "Buổi chiều tà tại quảng trường Landosol, giữa dòng người tấp nập, Neneka khẽ nhấp ngụm trà sau tấm màn che của một quán ven đường.\n\n"
+            "Cậu xuất hiện — một biến số kỳ lạ không nằm trong bất kỳ phương trình ma pháp nào mà cô từng giải. "
+            "Thay vì dè chừng một Thất Vương mang danh 'Biến Mạo Đại Phi', cậu lại nở nụ cười ngây ngô và chia sẻ mẩu bánh ngọt vừa mua.\n\n"
+            "\"Fufu... Thú vị thật đấy. Để xem cậu nhóc này sẽ đưa ta đến những dữ liệu bất ngờ nào đây.\""
+        )
+    },
+    2: {
+        "title": "Bond 2: Buổi Trà Chiều Bí Mật",
+        "req_affection": 200,
+        "summary": "Trốn khỏi triều đình để cùng uống trà đen",
+        "story": (
+            "Trước cửa phòng cậu, một phân thân gương của Neneka khẽ gõ cửa rồi tinh nghịch kéo tay cậu đi.\n\n"
+            "Bản thể chính của cô đang đợi ở một góc vườn hoàng gia vắng người, trên bàn là bộ ấm chén sứ tinh xảo cùng đĩa bánh tart dâu tây Landosol.\n\n"
+            "\"Ta đã để một phân thân ở lại dự cuộc họp triều đình tẻ nhạt kia rồi. Đừng nói với ai đấy nhé, cậu hiệp sĩ. "
+            "Hôm nay, thời gian này là ta dành riêng cho cậu.\""
+        )
+    },
+    3: {
+        "title": "Bond 3: Dưới Tán Cây Sol",
+        "req_affection": 450,
+        "summary": "Sự che chở dịu dàng của người chị lớn",
+        "story": (
+            "Sau một ngày làm việc kiệt sức, cậu thiếp đi trên chiếc ghế dài. Khi tỉnh lại, cậu nhận ra đầu mình đang gối lên một bờ đùi nhỏ nhắn, êm ái.\n\n"
+            "Neneka đang khẽ phất chiếc quạt lông vũ tạo làn gió mát, ánh mắt đong đầy sự dịu dàng khác hẳn vẻ sắc lạnh thường ngày. "
+            "Ngón tay cô nhẹ nhàng vuốt những sợi tóc lòa xòa trước trán cậu:\n\n"
+            "\"Tỉnh rồi sao, cậu nhóc ngốc? Cứ ngủ thêm chút nữa đi... Có ta ở đây, không một biến số xấu nào có thể chạm đến cậu đâu.\""
+        )
+    },
+    4: {
+        "title": "Bond 4: Tâm Sự Của Thất Vương",
+        "req_affection": 700,
+        "summary": "Khoảnh khắc yếu lòng hiếm hoi của Metamorphose",
+        "story": (
+            "Đêm muộn trên đỉnh tháp quan sát, gió đêm thổi tung tà áo choàng của Neneka.\n\n"
+            "Lần đầu tiên, cậu thấy bóng lưng của người phụ nữ mang danh Biến Mạo Đại Phi có chút cô độc và trĩu nặng gánh âu lo về tương lai của thế giới Astrum. "
+            "Khi cậu lặng lẽ bước đến khoác tấm áo ấm lên vai cô, Neneka khẽ giật mình rồi mỉm cười yếu ớt, tựa đầu vào vai cậu:\n\n"
+            "\"Gánh vác thế giới này mệt mỏi hơn ta tưởng... Nhưng lạ thật, chỉ cần ở bên cạnh cậu, mọi tính toán phức tạp trong đầu ta dường như đều tan biến.\""
+        )
+    },
+    5: {
+        "title": "Bond 5: Khế Ước Gương Vĩnh Hằng",
+        "req_affection": 900,
+        "summary": "Khế ước linh hồn vượt trên mọi định luật",
+        "story": (
+            "Dưới ánh trăng lung linh, Neneka ngưng tụ ma lực trong lòng bàn tay, tạo thành một mảnh gương pha lê phát ra ánh sáng tím huyền ảo rồi đặt vào tay cậu.\n\n"
+            "Cô nhìn sâu vào mắt cậu, giọng nói đong đầy sự trìu mến thiêng liêng:\n\n"
+            "\"Mảnh gương này chứa một phần linh hồn của ta. Dù ở bất kỳ đâu trong thế giới này, chỉ cần cậu gọi tên Neneka, ta sẽ lập tức xuất hiện. "
+            "Đối với cả thế giới, ta là một Thất Vương toan tính... Nhưng đối với riêng cậu, ta nguyện làm người bảo bọc và yêu thương cậu suốt cuộc đời này.\""
+        )
+    }
+}
+
