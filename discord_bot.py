@@ -9,6 +9,7 @@ from state_manager import StateManager
 from memory_system import MemorySystem
 from cognitive_engine import CognitiveEngine
 from config_persona import BOND_STORIES
+from voice_service import VoiceService
 
 load_dotenv()
 
@@ -30,6 +31,10 @@ engine = CognitiveEngine(
     state_mgr=state_mgr,
     memory_sys=memory_sys
 )
+voice_service = VoiceService(gemini_api_key=GEMINI_API_KEY)
+
+# Cấu hình giọng nói AI tiếng Nhật (mặc định BẬT)
+voice_enabled_global = True
 
 # Cấu hình Discord Bot
 intents = discord.Intents.default()
@@ -116,6 +121,46 @@ async def cmd_cot(ctx):
     show_cot_global = not show_cot_global
     status_str = "BẬT" if show_cot_global else "TẮT"
     await ctx.reply(f"🧠 [Hệ thống] Chế độ hiển thị Chain of Thought hiện đang: **{status_str}**")
+
+@bot.command(name="voice", aliases=["giongnoi", "tts"])
+async def cmd_voice(ctx, state: str = None):
+    """Bật / Tắt giọng nói tiếng Nhật cho Neneka"""
+    global voice_enabled_global
+    if state is None:
+        voice_enabled_global = not voice_enabled_global
+    else:
+        st = state.lower().strip()
+        if st in ["on", "bat", "bật", "true", "1", "enable"]:
+            voice_enabled_global = True
+        elif st in ["off", "tat", "tắt", "false", "0", "disable"]:
+            voice_enabled_global = False
+        else:
+            voice_enabled_global = not voice_enabled_global
+    status_str = "🔊 **BẬT**" if voice_enabled_global else "🔇 **TẮT**"
+    await ctx.reply(f"🎙️ [Giọng nói AI] Chế độ phát âm tiếng Nhật của Neneka hiện đang: {status_str}")
+
+@bot.command(name="speak", aliases=["noi", "say"])
+async def cmd_speak(ctx, *, text: str = None):
+    """Ra lệnh cho Neneka phát âm một câu bằng giọng tiếng Nhật"""
+    if not text:
+        await ctx.reply("Fufu... Cậu muốn ta nói câu gì nào? Hãy dùng: `!n speak <nội dung tiếng Nhật hoặc tiếng Việt>` nhé.")
+        return
+
+    async with ctx.typing():
+        try:
+            audio_path = await voice_service.generate_voice(text)
+            if audio_path and os.path.exists(audio_path):
+                discord_file = discord.File(audio_path, filename="neneka_speak.mp3")
+                await ctx.reply(f"🇯🇵 *「{text}」*", file=discord_file)
+                try:
+                    os.remove(audio_path)
+                except Exception:
+                    pass
+            else:
+                await ctx.reply("Fufu... Ma lực có chút gián đoạn nên ta chưa thể cất tiếng câu này được.")
+        except Exception as e:
+            print(f"[Error in speak command]: {e}")
+            await ctx.reply("Có lỗi xảy ra khi tạo giọng nói.")
 
 @bot.command(name="reset")
 async def cmd_reset(ctx):
@@ -213,7 +258,25 @@ async def cmd_gift(ctx, *, gift_name: str = None):
                 value=f"[{bar}] **{pts}/1000** (Cấp {tier['tier_id']}: *{tier['name']}*)",
                 inline=False
             )
-            await ctx.reply(embed=embed)
+
+            # Tạo giọng nói tiếng Nhật nếu có
+            audio_path = None
+            ja_text = getattr(result, "japanese_response", "").strip()
+            if voice_enabled_global and ja_text:
+                try:
+                    audio_path = await voice_service.generate_voice(ja_text)
+                except Exception as ve:
+                    print(f"[Voice Warning in gift]: {ve}")
+
+            if audio_path and os.path.exists(audio_path):
+                discord_file = discord.File(audio_path, filename="neneka_gift_voice.mp3")
+                await ctx.reply(embed=embed, file=discord_file)
+                try:
+                    os.remove(audio_path)
+                except Exception:
+                    pass
+            else:
+                await ctx.reply(embed=embed)
 
             # Nếu có Bond Story mới mở khóa
             if getattr(result, "newly_unlocked_bonds", None):
@@ -286,6 +349,8 @@ async def cmd_help(ctx):
     )
     embed.add_field(name="`!n status`", value="Xem chỉ số hảo cảm, cảm xúc, bảo bọc hiện tại.", inline=False)
     embed.add_field(name="`!n gift <món quà>`", value="Tặng điểm tâm/quà Landosol cho Neneka để tăng hảo cảm.", inline=False)
+    embed.add_field(name="`!n voice [on/off]`", value="Bật/Tắt chế độ gửi kèm file âm thanh giọng nói tiếng Nhật của Neneka.", inline=False)
+    embed.add_field(name="`!n speak <câu nói>`", value="Ra lệnh cho Neneka phát âm trực tiếp bằng giọng tiếng Nhật.", inline=False)
     embed.add_field(name="`!n bond [1-5]`", value="Xem danh sách hoặc đọc các mẩu truyện Ký ức Liên kết đã mở khóa.", inline=False)
     embed.add_field(name="`!n cot`", value="Bật/Tắt hiển thị luồng suy nghĩ nội tâm của Neneka.", inline=False)
     embed.add_field(name="`!n reset`", value="Reset điểm hảo cảm và ký ức về trạng thái ban đầu.", inline=False)
@@ -332,6 +397,10 @@ async def on_message(message: discord.Message):
 
             reply_text = f"{result.action_gesture} {result.spoken_response}"
 
+            ja_text = getattr(result, "japanese_response", "").strip()
+            if ja_text:
+                reply_text += f"\n-# 🇯🇵 *「{ja_text}」*"
+
             if show_cot_global:
                 cot_text = (
                     f"\n\n> 🧠 **Suy nghĩ nội tâm:**\n"
@@ -347,7 +416,23 @@ async def on_message(message: discord.Message):
             if len(reply_text) > 2000:
                 reply_text = reply_text[:1990] + "..."
 
-            await message.reply(reply_text)
+            # Tạo file âm thanh giọng nói tiếng Nhật nếu tính năng đang BẬT
+            audio_path = None
+            if voice_enabled_global and ja_text:
+                try:
+                    audio_path = await voice_service.generate_voice(ja_text)
+                except Exception as ve:
+                    print(f"[Voice Warning]: {ve}")
+
+            if audio_path and os.path.exists(audio_path):
+                discord_file = discord.File(audio_path, filename="neneka_voice.mp3")
+                await message.reply(reply_text, file=discord_file)
+                try:
+                    os.remove(audio_path)
+                except Exception:
+                    pass
+            else:
+                await message.reply(reply_text)
 
             # Nếu cuộc trò chuyện kích hoạt mở khóa Bond Story mới
             if getattr(result, "newly_unlocked_bonds", None):

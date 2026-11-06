@@ -6,4 +6,7 @@ neneka_state.json
 neneka_memories.json
 run_cli.bat
 run_discord.bat
+temp_audio/
+*.mp3
+*.wav
 
