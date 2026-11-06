@@ -362,8 +362,12 @@ async def on_message(message: discord.Message):
         except Exception as e:
             import traceback
             traceback.print_exc()
+            err_msg = str(e)[:150]
             print(f"[Error processing message]: {e}")
-            await message.reply("Fufu... Có một chút nhiễu loạn trong luồng ma lực của ta vừa xảy ra. Cậu nói lại được không?")
+            await message.reply(
+                f"Fufu... Có một chút nhiễu loạn trong luồng ma lực của ta vừa xảy ra. Cậu nói lại được không?\n"
+                f"-# ⚙️ Debug: `{err_msg}`"
+            )
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)

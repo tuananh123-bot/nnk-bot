@@ -97,7 +97,7 @@ class CognitiveEngine:
         self.memory_sys = memory_sys
         self.model_name = model_name
         self.gemini_fallback_models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
-        self.groq_fallback_models = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+        self.groq_fallback_models = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 
         # Khởi tạo Gemini client
         self.gemini_client = None
@@ -167,11 +167,17 @@ class CognitiveEngine:
                         {"role": "user", "content": user_message}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.75
+                    temperature=0.75,
+                    max_tokens=1500
                 )
-                content = resp.choices[0].message.content
+                content = (resp.choices[0].message.content or "").strip()
+                if not content:
+                    print(f"[Groq Warning] Model {model} trả về nội dung rỗng, thử model khác...")
+                    last_error = RuntimeError(f"Model {model} trả về nội dung rỗng")
+                    continue
                 return NenekaCognitiveOutput.model_validate_json(content)
             except Exception as e:
+                print(f"[Groq Warning] Model {model} lỗi: {e}")
                 last_error = e
                 continue
         raise last_error
