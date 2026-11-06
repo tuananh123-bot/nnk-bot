@@ -150,7 +150,8 @@ async def cmd_speak(ctx, *, text: str = None):
         try:
             audio_path = await voice_service.generate_voice(text)
             if audio_path and os.path.exists(audio_path):
-                discord_file = discord.File(audio_path, filename="neneka_speak.mp3")
+                ext = os.path.splitext(audio_path)[1] or ".mp3"
+                discord_file = discord.File(audio_path, filename=f"neneka_speak{ext}")
                 await ctx.reply(f"🇯🇵 *「{text}」*", file=discord_file)
                 try:
                     os.remove(audio_path)
@@ -269,7 +270,8 @@ async def cmd_gift(ctx, *, gift_name: str = None):
                     print(f"[Voice Warning in gift]: {ve}")
 
             if audio_path and os.path.exists(audio_path):
-                discord_file = discord.File(audio_path, filename="neneka_gift_voice.mp3")
+                ext = os.path.splitext(audio_path)[1] or ".mp3"
+                discord_file = discord.File(audio_path, filename=f"neneka_gift_voice{ext}")
                 await ctx.reply(embed=embed, file=discord_file)
                 try:
                     os.remove(audio_path)
@@ -425,7 +427,8 @@ async def on_message(message: discord.Message):
                     print(f"[Voice Warning]: {ve}")
 
             if audio_path and os.path.exists(audio_path):
-                discord_file = discord.File(audio_path, filename="neneka_voice.mp3")
+                ext = os.path.splitext(audio_path)[1] or ".mp3"
+                discord_file = discord.File(audio_path, filename=f"neneka_voice{ext}")
                 await message.reply(reply_text, file=discord_file)
                 try:
                     os.remove(audio_path)

@@ -2,41 +2,25 @@
 import os
 import asyncio
 import base64
-import tempfile
 from typing import Optional
 
 class VoiceService:
     """
-    Hệ thống tạo giọng nói tiếng Nhật anime cho Neneka (Utsushimi Neneka).
-    Hỗ trợ 2 engine tự động dự phòng:
-    1. Edge-TTS: Miễn phí, tốc độ cao, chất lượng giọng Anime tự nhiên (ja-JP-NanamiNeural).
-    2. Gemini TTS (gemini-3.8-flash-tts): Dự phòng thông qua Gemini API khi cần.
+    Hệ thống tạo giọng nói tiếng Nhật anime chuẩn nhân vật Neneka (Utsushimi Neneka).
+    - Ưu tiên 1: Gemini 3.8 Flash TTS với Voice Persona riêng biệt (voice_lcogojy42c6q)
+      được thiết kế riêng theo chất giọng trầm ấm, điềm đạm, quyến rũ và kiêu kỳ của Thất Vương Neneka.
+    - Dự phòng 2: Edge-TTS Neural được hạ cao độ (pitch -14Hz) và tốc độ (-6%) để giữ chất giọng trưởng thành.
     """
     def __init__(self, gemini_api_key: Optional[str] = None):
         self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
+        # ID giọng Voice Design riêng biệt cho Neneka (Gemini 3.8 Flash TTS)
+        self.gemini_voice_id = "voice_lcogojy42c6q"
         self.default_voice_edge = "ja-JP-NanamiNeural"
         self.output_dir = os.path.join(os.path.dirname(__file__), "temp_audio")
         os.makedirs(self.output_dir, exist_ok=True)
 
-    async def _generate_edge_tts(self, text_ja: str, output_file: str) -> bool:
-        """Tạo giọng nói tiếng Nhật bằng Edge-TTS"""
-        try:
-            import edge_tts
-            # Tinh chỉnh rate và pitch để giọng có nét kiêu kỳ, điềm tĩnh của Neneka
-            communicate = edge_tts.Communicate(
-                text=text_ja,
-                voice=self.default_voice_edge,
-                rate="-2%",
-                pitch="-1Hz"
-            )
-            await communicate.save(output_file)
-            return os.path.exists(output_file) and os.path.getsize(output_file) > 0
-        except Exception as e:
-            print(f"[VoiceService Warning] Edge-TTS lỗi: {e}")
-            return False
-
     def _generate_gemini_tts(self, text_ja: str, output_file: str) -> bool:
-        """Tạo giọng nói tiếng Nhật bằng Gemini 3.8 Flash TTS"""
+        """Tạo giọng nói tiếng Nhật bằng Gemini 3.8 Flash TTS với Voice Persona của Neneka"""
         if not self.gemini_api_key:
             return False
         try:
@@ -51,14 +35,14 @@ class VoiceService:
                         "text": text_ja,
                         "annotations": [{
                             "type": "speech_metadata",
-                            "style": "playful, mature anime lady tone, gentle and teasing",
+                            "style": "calm, elegant, mature and teasing anime lady tone, gentle onee-san chuckle",
                         }]
                     }],
                 }],
                 response_format={"type": "audio"},
                 generation_config={
                     "speech_config": [
-                        {"voice": "Aoede"}
+                        {"voice": self.gemini_voice_id}
                     ]
                 },
             )
@@ -68,36 +52,54 @@ class VoiceService:
                     f.write(data)
                 return True
         except Exception as e:
-            print(f"[VoiceService Warning] Gemini TTS lỗi: {e}")
+            print(f"[VoiceService Warning] Gemini Custom TTS gặp lỗi: {e}")
         return False
+
+    async def _generate_edge_tts(self, text_ja: str, output_file: str) -> bool:
+        """Tạo giọng nói tiếng Nhật dự phòng qua Edge-TTS với tông trầm trưởng thành"""
+        try:
+            import edge_tts
+            # Hạ cao độ (-14Hz) và làm chậm (-6%) để giọng Nanami không bị trẻ con/nhí nhảnh
+            communicate = edge_tts.Communicate(
+                text=text_ja,
+                voice=self.default_voice_edge,
+                rate="-6%",
+                pitch="-14Hz"
+            )
+            await communicate.save(output_file)
+            return os.path.exists(output_file) and os.path.getsize(output_file) > 0
+        except Exception as e:
+            print(f"[VoiceService Warning] Edge-TTS lỗi: {e}")
+            return False
 
     async def generate_voice(self, text_ja: str, custom_filename: Optional[str] = None) -> Optional[str]:
         """
-        Chuyển câu tiếng Nhật thành file âm thanh.
-        Trả về đường dẫn tới file âm thanh (.mp3 hoặc .wav) nếu thành công, None nếu thất bại.
+        Chuyển câu tiếng Nhật thành file âm thanh giọng Neneka.
+        Trả về đường dẫn tới file âm thanh (.wav hoặc .mp3) nếu thành công, None nếu thất bại.
         """
         if not text_ja or not text_ja.strip():
             return None
 
         clean_text = text_ja.strip()
-        # Loại bỏ các ký tự dấu hoa thị hành động nếu có lọt vào tiếng Nhật
+        # Loại bỏ các ký tự hành động trong dấu hoa thị *...*
         if clean_text.startswith("*") and "*" in clean_text[1:]:
             parts = clean_text.split("*")
             clean_text = parts[-1].strip()
 
-        fname = custom_filename or f"neneka_{int(asyncio.get_event_loop().time() * 1000)}.mp3"
-        output_path = os.path.join(self.output_dir, fname)
+        base_name = f"neneka_{int(asyncio.get_event_loop().time() * 1000)}"
 
-        # 1. Thử Edge-TTS trước (nhanh, định dạng MP3 nhẹ, không tốn quota)
-        success = await self._generate_edge_tts(clean_text, output_path)
-        if success:
-            return output_path
+        # 1. ƯU TIÊN: Gọi Gemini TTS với Voice Persona riêng của Neneka
+        if self.gemini_api_key:
+            wav_output = os.path.join(self.output_dir, f"{base_name}.wav")
+            success_gemini = await asyncio.to_thread(self._generate_gemini_tts, clean_text, wav_output)
+            if success_gemini:
+                return wav_output
 
-        # 2. Dự phòng sang Gemini TTS nếu Edge-TTS gặp lỗi mạng
-        wav_output = output_path.replace(".mp3", ".wav")
-        success_gemini = await asyncio.to_thread(self._generate_gemini_tts, clean_text, wav_output)
-        if success_gemini:
-            return wav_output
+        # 2. DỰ PHÒNG: Nếu Gemini lỗi/hết hạn, dùng Edge-TTS đã chỉnh tông trầm
+        mp3_output = os.path.join(self.output_dir, f"{base_name}.mp3")
+        success_edge = await self._generate_edge_tts(clean_text, mp3_output)
+        if success_edge:
+            return mp3_output
 
         return None
 
