@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 neneka_state.json
 neneka_memories.json
+neneka.db
 run_cli.bat
 run_discord.bat
 temp_audio/
