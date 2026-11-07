@@ -52,10 +52,16 @@ class Settings(BaseSettings):
     SHORT_TERM_MEMORY_LIMIT: int = Field(default=15)
 
     # Japanese Voice / TTS
-    TTS_PROVIDER: str = Field(default="edge", description="Provider for Japanese TTS: edge or gemini")
+    TTS_PROVIDER: str = Field(default="edge", description="Provider for Japanese TTS: edge, elevenlabs, or gpt_sovits")
     DEFAULT_JAPANESE_VOICE: str = Field(default="ja-JP-NanamiNeural")
     VOICE_PITCH_ADJUST: str = Field(default="-14Hz")
     VOICE_RATE_ADJUST: str = Field(default="-6%")
+
+    # Voice Cloning (ElevenLabs & GPT-SoVITS)
+    ELEVENLABS_API_KEY: str = Field(default="")
+    ELEVENLABS_VOICE_ID: str = Field(default="")
+    ELEVENLABS_MODEL_ID: str = Field(default="eleven_multilingual_v2")
+    SOVITS_API_URL: str = Field(default="http://127.0.0.1:9880")
 
     model_config = SettingsConfigDict(
         env_file=".env",

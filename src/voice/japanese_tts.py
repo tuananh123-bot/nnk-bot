@@ -6,6 +6,8 @@ import logging
 from typing import List, Optional, Dict, Any
 
 from src.voice.base import BaseTTSProvider
+from src.voice.elevenlabs_tts import ElevenLabsTTSProvider
+from src.voice.sovits_tts import GPTSoVITSTTSProvider
 from src.config import settings
 
 logger = logging.getLogger("Neneka.JapaneseTTS")
@@ -26,7 +28,8 @@ EMOTION_PRESETS: Dict[str, Dict[str, str]] = {
 class JapaneseTTSProvider(BaseTTSProvider):
     """
     Japanese TTS Provider chuyên biệt cho nhân vật Neneka
-    - Sử dụng mô hình âm thanh được cấp phép (Licensed Neural TTS)
+    - Hỗ trợ Voice Cloning qua ElevenLabs (Instant Voice Cloning) và GPT-SoVITS
+    - Fallback mượt mà sang Licensed Neural TTS (Edge-TTS Nanami)
     - Tinh chỉnh cao độ và trường độ để thể hiện phong thái trưởng thành, điềm đạm, kiêu kỳ
     - 10 Preset cảm xúc chuyên biệt (Normal, Happy, Curious, Sarcastic, Serious, v.v.)
     - Bộ nhớ đệm âm thanh (Audio Cache) dựa trên hash SHA-256
@@ -38,6 +41,10 @@ class JapaneseTTSProvider(BaseTTSProvider):
         self.default_emotion = "Normal"
         self.default_speed = settings.VOICE_RATE_ADJUST
         self.default_pitch = settings.VOICE_PITCH_ADJUST
+
+        # Khởi tạo các provider Voice Cloning
+        self.elevenlabs_provider = ElevenLabsTTSProvider(cache_dir=cache_dir)
+        self.sovits_provider = GPTSoVITSTTSProvider(cache_dir=cache_dir)
 
     def get_supported_languages(self) -> List[str]:
         return ["ja"]
@@ -74,7 +81,7 @@ class JapaneseTTSProvider(BaseTTSProvider):
         pitch: Optional[str] = None,
         **kwargs
     ) -> Optional[str]:
-        """Tạo file âm thanh tiếng Nhật từ văn bản (có bộ nhớ đệm)"""
+        """Tạo file âm thanh tiếng Nhật từ văn bản (có hỗ trợ Voice Clone & bộ nhớ đệm)"""
         if not text or not text.strip():
             return None
 
@@ -85,8 +92,23 @@ class JapaneseTTSProvider(BaseTTSProvider):
             clean_text = parts[-1] if parts else clean_text
 
         selected_emotion = emotion or self.default_emotion
-        preset = EMOTION_PRESETS.get(selected_emotion, EMOTION_PRESETS["Normal"])
 
+        # 1. Thử nghiệm Voice Cloning với ElevenLabs nếu được cấu hình
+        if settings.TTS_PROVIDER == "elevenlabs" or (settings.ELEVENLABS_API_KEY and settings.ELEVENLABS_VOICE_ID):
+            audio = await self.elevenlabs_provider.generate_speech(clean_text, emotion=selected_emotion)
+            if audio:
+                return audio
+            logger.warning("ElevenLabs Voice Clone thất bại hoặc hết quota, đang fallback sang Edge-TTS...")
+
+        # 2. Thử nghiệm Voice Cloning với GPT-SoVITS nếu được cấu hình
+        if settings.TTS_PROVIDER == "gpt_sovits":
+            audio = await self.sovits_provider.generate_speech(clean_text, emotion=selected_emotion)
+            if audio:
+                return audio
+            logger.warning("GPT-SoVITS Voice Clone thất bại, đang fallback sang Edge-TTS...")
+
+        # 3. Mặc định / Fallback sang Edge-TTS
+        preset = EMOTION_PRESETS.get(selected_emotion, EMOTION_PRESETS["Normal"])
         applied_rate = speed or preset["rate"]
         applied_pitch = pitch or preset["pitch"]
 
@@ -111,4 +133,5 @@ class JapaneseTTSProvider(BaseTTSProvider):
         return None
 
 japanese_tts = JapaneseTTSProvider()
+
 
