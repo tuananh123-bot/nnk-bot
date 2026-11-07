@@ -59,7 +59,7 @@ class Settings(BaseSettings):
 
     # Fish Audio API
     FISH_AUDIO_API_KEY: str = Field(default="")
-    FISH_AUDIO_MODEL_ID: str = Field(default="a7b24aa4388d41dbada449cee9583504")
+    FISH_AUDIO_MODEL_ID: str = Field(default="5b11a7f1653844048d44a5068859212a")
 
     # GPT-SoVITS (Dự phòng chạy local)
     SOVITS_API_URL: str = Field(default="http://127.0.0.1:9880")

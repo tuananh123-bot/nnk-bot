@@ -101,3 +101,4 @@ class FishAudioTTSProvider(BaseTTSProvider):
         except Exception as e:
             logger.error(f"Lỗi khi kết nối Fish Audio API: {e}")
             return None
+
