@@ -18,3 +18,10 @@ async def test_japanese_tts_generation():
     assert os.path.exists(path)
     assert os.path.getsize(path) > 0
 
+def test_fish_audio_provider():
+    from src.voice.fish_audio_tts import FishAudioTTSProvider
+    provider = FishAudioTTSProvider()
+    assert provider.get_audio_format() == "mp3"
+    assert "ja" in provider.get_supported_languages()
+
+

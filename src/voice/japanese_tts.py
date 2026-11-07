@@ -6,7 +6,7 @@ import logging
 from typing import List, Optional, Dict, Any
 
 from src.voice.base import BaseTTSProvider
-from src.voice.elevenlabs_tts import ElevenLabsTTSProvider
+from src.voice.fish_audio_tts import FishAudioTTSProvider
 from src.voice.sovits_tts import GPTSoVITSTTSProvider
 from src.config import settings
 
@@ -28,7 +28,7 @@ EMOTION_PRESETS: Dict[str, Dict[str, str]] = {
 class JapaneseTTSProvider(BaseTTSProvider):
     """
     Japanese TTS Provider chuyên biệt cho nhân vật Neneka
-    - Hỗ trợ Voice Cloning qua ElevenLabs (Instant Voice Cloning) và GPT-SoVITS
+    - Hỗ trợ Voice Cloning qua Fish Audio (https://fish.audio) và GPT-SoVITS
     - Fallback mượt mà sang Licensed Neural TTS (Edge-TTS Nanami)
     - Tinh chỉnh cao độ và trường độ để thể hiện phong thái trưởng thành, điềm đạm, kiêu kỳ
     - 10 Preset cảm xúc chuyên biệt (Normal, Happy, Curious, Sarcastic, Serious, v.v.)
@@ -43,7 +43,7 @@ class JapaneseTTSProvider(BaseTTSProvider):
         self.default_pitch = settings.VOICE_PITCH_ADJUST
 
         # Khởi tạo các provider Voice Cloning
-        self.elevenlabs_provider = ElevenLabsTTSProvider(cache_dir=cache_dir)
+        self.fish_provider = FishAudioTTSProvider(cache_dir=cache_dir)
         self.sovits_provider = GPTSoVITSTTSProvider(cache_dir=cache_dir)
 
     def get_supported_languages(self) -> List[str]:
@@ -81,7 +81,7 @@ class JapaneseTTSProvider(BaseTTSProvider):
         pitch: Optional[str] = None,
         **kwargs
     ) -> Optional[str]:
-        """Tạo file âm thanh tiếng Nhật từ văn bản (có hỗ trợ Voice Clone & bộ nhớ đệm)"""
+        """Tạo file âm thanh tiếng Nhật từ văn bản (có hỗ trợ Fish Audio Voice Clone & bộ nhớ đệm)"""
         if not text or not text.strip():
             return None
 
@@ -93,12 +93,12 @@ class JapaneseTTSProvider(BaseTTSProvider):
 
         selected_emotion = emotion or self.default_emotion
 
-        # 1. Thử nghiệm Voice Cloning với ElevenLabs nếu được cấu hình
-        if settings.TTS_PROVIDER == "elevenlabs" or (settings.ELEVENLABS_API_KEY and settings.ELEVENLABS_VOICE_ID):
-            audio = await self.elevenlabs_provider.generate_speech(clean_text, emotion=selected_emotion)
+        # 1. Thử nghiệm Voice Cloning với Fish Audio nếu được cấu hình
+        if settings.TTS_PROVIDER == "fishaudio" or settings.FISH_AUDIO_API_KEY:
+            audio = await self.fish_provider.generate_speech(clean_text, emotion=selected_emotion)
             if audio:
                 return audio
-            logger.warning("ElevenLabs Voice Clone thất bại hoặc hết quota, đang fallback sang Edge-TTS...")
+            logger.warning("Fish Audio TTS thất bại hoặc hết quota, đang fallback sang Edge-TTS...")
 
         # 2. Thử nghiệm Voice Cloning với GPT-SoVITS nếu được cấu hình
         if settings.TTS_PROVIDER == "gpt_sovits":
