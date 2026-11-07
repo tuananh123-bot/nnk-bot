@@ -72,10 +72,6 @@ class NenekaCognitiveOutput(BaseModel):
     spoken_response: str = Field(
         description="Lời thoại chính thức của Neneka (từ 2 đến 4 câu ngắn gọn, súc tích, tự nhiên, nhịp điệu anime, tuyệt đối KHÔNG viết văn dài dòng)."
     )
-    japanese_response: str = Field(
-        default="",
-        description="Lời thoại anime tiếng Nhật tương ứng của Neneka (viết bằng chữ Nhật Kanji/Kana tự nhiên, phong thái quý cô Thất Vương 'fufu', xưng 'watakushi'/'watashi', gọi người dùng là 'bouya'/'anata'/'kishi-kun') dùng để phát âm giọng nói AI."
-    )
     newly_unlocked_bonds: list[int] = Field(
         default_factory=list,
         description="Danh sách id các Bond Story mới mở khóa nếu có (nội bộ hệ thống)."
@@ -213,8 +209,7 @@ class CognitiveEngine:
    - Nếu được khen ngợi/tán tỉnh ngọt ngào: Kích hoạt phản ứng bối rối, ngượng ngùng ngầm rồi lấy lại phong thái bề trên (Tsundere).
    - Nếu vào đêm khuya hoặc mệt mỏi: Kích hoạt bản năng bảo bọc, giục nghỉ ngơi, cằn nhằn yêu thương.
 3. Để hai luồng suy nghĩ 'Lý trí' và 'Người chị bảo bọc' đối thoại trong Chain of Thought.
-4. Lời thoại tiếng Việt (spoken_response): Tuyệt đối KHÔNG viết văn trợ lý ảo sáo rỗng. Hãy nói chuyện tự nhiên bằng 2 - 4 câu đắt giá, giàu cảm xúc, có nhạc điệu anime theo các mẫu Few-shot.
-5. Lời thoại tiếng Nhật (japanese_response): Câu nói tiếng Nhật tương ứng với phong thái anime nguyên bản của Neneka (CV: Iguchi Yuka) để AI đọc thành tiếng (viết bằng Kanji/Kana, tự nhiên, ví dụ: "ふふっ、また私に会いに来てくれたのね、坊や。").
+4. Lời thoại (spoken_response): Tuyệt đối KHÔNG viết văn trợ lý ảo sáo rỗng. Hãy nói chuyện tự nhiên bằng 2 - 4 câu đắt giá, giàu cảm xúc, có nhạc điệu anime theo các mẫu Few-shot.
 """
 
         cognitive_result = None
@@ -291,8 +286,7 @@ Người dùng vừa gửi tặng Neneka món quà: "{gift_name}".
    - Quà kỳ lạ hoặc vụng về: Bật cười thích thú, trêu chọc xem có phải cậu đang muốn thử phản ứng của cô không.
 2. Cử chỉ hành động (*action_gesture*): Đi kèm cử chỉ quý phái, phân thân nhận quà hoặc bẻ nửa miếng bánh mời cậu cùng thưởng thức.
 3. Điểm hảo cảm (affection_delta): Luôn cộng từ +10 đến +25 điểm.
-4. Lời thoại tiếng Việt (spoken_response): 2 - 4 câu tự nhiên, ấm áp, đậm chất anime.
-5. Lời thoại tiếng Nhật (japanese_response): Câu phản ứng tiếng Nhật tương ứng của Neneka khi nhận món quà này.
+4. Lời thoại (spoken_response): 2 - 4 câu tự nhiên, ấm áp, đậm chất anime.
 """
         gift_prompt = f"Ta vừa nhận được món quà này từ cậu: {gift_name}"
         cognitive_result = None

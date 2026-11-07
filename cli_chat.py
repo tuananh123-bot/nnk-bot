@@ -74,8 +74,6 @@ def main():
                     print(f"  • Cảm xúc:  {result.selected_emotion} (Hảo cảm: +{result.affection_delta})")
                     print("·" * 50)
                 print(f"\n[Neneka nhận quà]: {result.action_gesture} {result.spoken_response}")
-                if getattr(result, "japanese_response", None):
-                    print(f"  🇯🇵 [Japanese Voice]: 「{result.japanese_response}」")
                 print(f"\n{state_mgr.render_affection_bar()}")
                 if result.newly_unlocked_bonds:
                     for bid in result.newly_unlocked_bonds:
@@ -149,8 +147,6 @@ def main():
                 print("·" * 50)
 
             print(f"\n[Neneka]: {result.action_gesture} {result.spoken_response}")
-            if getattr(result, "japanese_response", None):
-                print(f"  🇯🇵 [Japanese Voice]: 「{result.japanese_response}」")
             print(f"\n{state_mgr.render_affection_bar()}")
 
         except Exception as e:
