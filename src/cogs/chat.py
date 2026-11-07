@@ -251,3 +251,4 @@ class ChatCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(ChatCog(bot))
+

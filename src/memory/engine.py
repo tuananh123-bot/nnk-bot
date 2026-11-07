@@ -2,7 +2,7 @@
 import re
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -112,7 +112,7 @@ class MemoryEngine:
             rel = rel_res.scalar_one_or_none()
             if rel:
                 rel.interaction_count += 1
-                rel.updated_at = datetime.utcnow()
+                rel.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
             await session.commit()
 

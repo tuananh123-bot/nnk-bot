@@ -67,3 +67,4 @@ class DatabaseManager:
             await self.engine.dispose()
 
 db_manager = DatabaseManager()
+

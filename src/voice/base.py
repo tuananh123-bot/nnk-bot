@@ -24,3 +24,4 @@ class BaseTTSProvider(ABC):
     def get_audio_format(self) -> str:
         """Định dạng âm thanh đầu ra (vd: 'mp3', 'wav')"""
         pass
+

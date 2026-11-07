@@ -99,3 +99,4 @@ class GroqClient:
     async def close(self):
         if self._client:
             await self._client.close()
+

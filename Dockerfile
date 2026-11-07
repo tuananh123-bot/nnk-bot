@@ -22,3 +22,4 @@ COPY . .
 
 # Khởi chạy bot
 CMD ["python", "main.py"]
+

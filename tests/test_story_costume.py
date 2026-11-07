@@ -24,3 +24,4 @@ def test_story_canon_status():
 
     fake_story = story_engine.verify_canon_status("Neneka đi mua sắm ở Paris thế kỷ 18")
     assert fake_story == "UNKNOWN"
+

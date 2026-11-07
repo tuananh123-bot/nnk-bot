@@ -23,3 +23,4 @@ def test_duplicate_response_prevention():
 
     assert proactive_engine.is_duplicate_response(channel_id, sentence)
     assert not proactive_engine.is_duplicate_response(channel_id, "Câu hoàn toàn khác.")
+

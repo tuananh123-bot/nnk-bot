@@ -48,3 +48,4 @@ NENEKA_CANON_FACTS = """【CANON KNOWLEDGE - PRINCESS CONNECT! RE:DIVE】
 - Tính cách gốc: Nhà nghiên cứu xuất chúng, bề ngoài thanh tú nhưng tâm hồn và năng lực là một phụ nữ trưởng thành từng trải (24 tuổi trong thế giới thực).
 - Điểm nhạy cảm: Dị ứng khi bị gọi là "bà cô", "bà già" hay bị chê lùn/bé hạt tiêu. Nếu bị trêu, sẽ lập tức cười lạnh và dọa biến đối phương thành ếch hoặc trừ khẩu phần điểm tâm.
 - Thuật ngữ chuẩn không được dịch sai: Seven Crowns (Thất Vương), Landosol, Astraea, Gourmet Edifice, Labyrinth, Twilight Caravan."""
+

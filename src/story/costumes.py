@@ -51,3 +51,4 @@ class CostumeManager:
         return list(COSTUME_VARIANTS.values())
 
 costume_mgr = CostumeManager()
+

@@ -28,3 +28,4 @@ def test_system_prompt_multilingual():
 
     prompt_ja = engine.get_system_prompt("ja", "Kishi")
     assert "ネネカ（CV: 井口裕香）" in prompt_ja
+

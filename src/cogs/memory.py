@@ -52,3 +52,4 @@ class MemoryCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(MemoryCog(bot))
+

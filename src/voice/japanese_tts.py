@@ -111,3 +111,4 @@ class JapaneseTTSProvider(BaseTTSProvider):
         return None
 
 japanese_tts = JapaneseTTSProvider()
+

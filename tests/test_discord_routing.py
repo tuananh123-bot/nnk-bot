@@ -26,3 +26,4 @@ def test_discord_message_routing_modes():
         is_bot=False, is_dm=False, is_mentioned=True, is_reply_to_bot=False, channel_id=999, content="@Neneka Hello"
     )
     assert should_mentioned
+

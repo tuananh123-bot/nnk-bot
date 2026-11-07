@@ -71,3 +71,4 @@ async def start_bot():
     if not settings.DISCORD_TOKEN:
         raise RuntimeError("Chưa tìm thấy DISCORD_TOKEN trong cấu hình!")
     await bot.start(settings.DISCORD_TOKEN)
+

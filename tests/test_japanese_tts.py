@@ -17,3 +17,4 @@ async def test_japanese_tts_generation():
     assert path is not None
     assert os.path.exists(path)
     assert os.path.getsize(path) > 0
+

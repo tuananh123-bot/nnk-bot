@@ -1,7 +1,7 @@
 # src/bond/engine.py
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, Tuple, List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -126,7 +126,7 @@ class BondEngine:
             profile = await self.get_or_create_bond_profile(session, user.id)
 
             # Chống spam: Không cộng điểm nếu tương tác quá dày (trừ sự kiện đặc biệt)
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             if event_type == "CONVERSATION" and (now - profile.last_interacted_at) < self.MIN_POINT_INTERVAL:
                 points = max(0, min(1, points))  # Hạ xuống tối đa 1 điểm nếu spam
 
@@ -200,3 +200,4 @@ class BondEngine:
                 "next_tier_points": next_points,
                 "all_tiers": BOND_TIERS
             }
+

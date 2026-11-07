@@ -1,4 +1,5 @@
 # tests/test_memory.py
+import uuid
 import pytest
 import pytest_asyncio
 from src.database.connection import db_manager
@@ -9,8 +10,8 @@ async def test_user_memory_isolation():
     await db_manager.initialize()
     engine = MemoryEngine()
 
-    user_a = "user_alpha_1"
-    user_b = "user_beta_2"
+    user_a = f"user_alpha_{uuid.uuid4().hex[:8]}"
+    user_b = f"user_beta_{uuid.uuid4().hex[:8]}"
 
     # User A records a secret hobby
     await engine.record_exchange(
@@ -44,7 +45,7 @@ async def test_user_memory_isolation():
 async def test_long_term_memory_retrieval_and_forget():
     await db_manager.initialize()
     engine = MemoryEngine()
-    uid = "test_user_privacy"
+    uid = f"test_user_privacy_{uuid.uuid4().hex[:8]}"
 
     await engine.record_exchange(
         discord_user_id=uid,
@@ -65,3 +66,4 @@ async def test_long_term_memory_retrieval_and_forget():
     assert len(mems_after) == 0
 
     await db_manager.close()
+

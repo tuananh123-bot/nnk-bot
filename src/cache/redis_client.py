@@ -101,3 +101,4 @@ class RedisManager:
             await self._redis.close()
 
 cache = RedisManager()
+

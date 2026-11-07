@@ -1,4 +1,5 @@
 # tests/test_bond.py
+import uuid
 import pytest
 from src.database.connection import db_manager
 from src.bond.engine import BondEngine, BOND_TIERS
@@ -10,7 +11,7 @@ async def test_bond_calculation_and_unlock():
     mem = MemoryEngine()
     bond = BondEngine()
 
-    uid = "test_bond_knight"
+    uid = f"test_bond_knight_{uuid.uuid4().hex[:8]}"
     async for session in db_manager.get_session():
         await mem.get_or_create_user(session, uid, "Knight")
 
@@ -28,3 +29,5 @@ async def test_bond_calculation_and_unlock():
     assert info_lvl1["title"] == BOND_TIERS[1]["title"]
 
     await db_manager.close()
+
+
