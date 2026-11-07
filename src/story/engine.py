@@ -23,6 +23,16 @@ CANON_STORIES: List[Dict[str, Any]] = [
         "source": "Neneka Character Story In-Game"
     },
     {
+        "id": "char_story_metamorph_regnant_quotes",
+        "category": "Character Story",
+        "title": "Lời Tuyên Ngôn Của Biến Mạo Đại Phi (Metamorph Regnant)",
+        "canon_status": "CANON",
+        "episode_id": "Battle & Cutscene Quotes",
+        "summary": "Neneka tuyên ngôn: 'Vương miện của ta không phải là thứ giả tạo, ta sẽ khắc sâu điều đó vào thân xác ngươi. Gương kia ngự ở trên tường, ai thông minh và mạnh nhất thế gian? Đương nhiên là ta. Ta là Metamorph Regnant — người phụ nữ của vạn biến thiên hóa.'",
+        "related_characters": "Yuuki, Kaiser Insight, Phân thân Neneka",
+        "source": "Princess Connect! Re:Dive Battle Lines & Character Voice"
+    },
+    {
         "id": "bond_story_1_tea_and_logic",
         "category": "Bond Story",
         "title": "Tách Trà Chiều Của Bậc Thất Vương",

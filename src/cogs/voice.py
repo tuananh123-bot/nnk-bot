@@ -116,6 +116,45 @@ class VoiceCog(commands.Cog):
         else:
             await interaction.response.send_message("❌ Có lỗi khi tạo âm thanh radio.", ephemeral=True)
 
+    @app_commands.command(name="quote", description="👑 Phát câu thoại kinh điển chính thức của Neneka (giọng lồng tiếng gốc)")
+    async def cmd_quote(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        quote_file = os.path.abspath(os.path.join("assets", "voice_samples", "neneka_sample_clean_1min.mp3"))
+        if not os.path.exists(quote_file):
+            quote_file = os.path.abspath(os.path.join("assets", "voice_samples", "neneka_sample_short.mp3"))
+
+        if not os.path.exists(quote_file):
+            await interaction.followup.send("❌ Không tìm thấy file âm thanh câu thoại của Neneka.")
+            return
+
+        # Phát vào Voice Channel nếu đang kết nối
+        if interaction.guild:
+            vc = voice_channel_mgr.get_voice_client(interaction.guild.id)
+            if vc and vc.is_connected():
+                await voice_channel_mgr.enqueue_audio(interaction.guild.id, quote_file)
+
+        embed = discord.Embed(
+            title="👑 Utsushimi Neneka — Metamorph Regnant (七冠 / 変貌大妃)",
+            description=(
+                "**🇯🇵 Trích đoạn thoại kinh điển:**\n"
+                "• *「私の冠が偽物ではないと、その身に刻み込んであげます。」*\n"
+                "• *「鏡よ鏡、世界で最も賢く強いのは誰ですか？ ええ、その通り。当然私です。」*\n"
+                "• *「私に使えたくなりましたか？ 私の中にデータさえあれば、本人は不要なのです。彼以外は。」*\n"
+                "• *「コソコソ隠れるのは終わりです。これから先は打って出ます。戦力として当てにしていますよ。」*\n"
+                "• *「自分の目に映った私が、本当の私だと思いますか？ 私はメタモルレグナント。千変万化の女ですよ。」*\n\n"
+                "**🇻🇳 Dịch nghĩa:**\n"
+                "• *Vương miện của ta không phải là đồ giả, ta sẽ khắc sâu điều đó vào thân xác ngươi.*\n"
+                "• *Gương kia ngự ở trên tường, ai thông minh và mạnh nhất thế gian? Đương nhiên là ta.*\n"
+                "• *Chỉ cần ta có dữ liệu, bản thể gốc là vô dụng. Ngoại trừ anh ấy.*\n"
+                "• *Ta là Metamorph Regnant — người phụ nữ của vạn biến thiên hóa.*"
+            ),
+            color=0x9b59b6
+        )
+        embed.set_footer(text="Giọng lồng tiếng chính thức: Yuka Iguchi (Princess Connect! Re:Dive)")
+
+        discord_file = discord.File(quote_file, filename="neneka_official_voice.mp3")
+        await interaction.followup.send(embed=embed, file=discord_file)
+
     @app_commands.command(name="voice_settings", description="⚙️ Xem cấu hình chất giọng tiếng Nhật hiện tại của Neneka")
     async def cmd_voice_settings(self, interaction: discord.Interaction):
         embed = discord.Embed(
