@@ -85,3 +85,4 @@ class GPTSoVITSTTSProvider(BaseTTSProvider):
         except Exception as e:
             logger.error(f"Lỗi khi kết nối GPT-SoVITS API ({self.api_url}): {e}")
             return None
+

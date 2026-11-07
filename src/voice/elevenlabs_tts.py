@@ -109,3 +109,4 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
         except Exception as e:
             logger.error(f"Lỗi khi kết nối ElevenLabs API: {e}")
             return None
+
