@@ -1,13 +1,14 @@
 # src/cogs/voice.py
 import os
 import random
-from typing import Optional
+from typing import Optional, Tuple, Dict, Any
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from src.voice.japanese_tts import japanese_tts, EMOTION_PRESETS
 from src.voice.voice_channel import voice_channel_mgr
+from src.voice.song_manager import get_song_by_theme_or_random, create_song_embed
 from src.llm.groq_client import GroqClient
 from src.personality.engine import PersonalityEngine
 
@@ -53,6 +54,26 @@ class VoiceCog(commands.Cog):
                 await voice_channel_mgr.enqueue_audio(guild_id, audio_file)
 
         return audio_file, ja_text, is_ja
+
+    async def _handle_sing(
+        self,
+        theme: Optional[str] = None,
+        guild_id: Optional[int] = None
+    ) -> Tuple[Optional[str], Dict[str, str]]:
+        """Xử lý chọn/sáng tác bài hát theo phong cách Nhật Bản và tạo file âm thanh Fish Audio"""
+        song = await get_song_by_theme_or_random(theme)
+        lyrics = song["japanese_lyrics"]
+        emotion = song.get("emotion", "Affectionate")
+
+        audio_file = await japanese_tts.generate_speech(lyrics, emotion=emotion)
+
+        # Phát vào Voice Channel nếu bot đang kết nối phòng thoại
+        if guild_id and audio_file and os.path.exists(audio_file):
+            vc = voice_channel_mgr.get_voice_client(guild_id)
+            if vc and vc.is_connected():
+                await voice_channel_mgr.enqueue_audio(guild_id, audio_file)
+
+        return audio_file, song
 
     # =========================================================================
     # SLASH COMMANDS
@@ -104,6 +125,27 @@ class VoiceCog(commands.Cog):
         if not is_ja:
             display_msg = f"🇻🇳 *\"{text}\"*\n" + display_msg
         await interaction.followup.send(display_msg, file=discord_file)
+
+    @app_commands.command(name="sing", description="🎵 Yêu cầu Neneka cất giọng hát một bài ngẫu nhiên theo phong cách Nhật Bản")
+    @app_commands.describe(theme="Chủ đề hoặc phong cách bài hát (ví dụ: ru ngủ, tình yêu, hoa anh đào, landosol, vui tươi...)")
+    async def cmd_sing(self, interaction: discord.Interaction, theme: Optional[str] = None):
+        await interaction.response.defer()
+        guild_id = interaction.guild.id if interaction.guild else None
+
+        # Tự động tham gia phòng thoại nếu người dùng đang trong phòng thoại
+        if interaction.guild and interaction.user.voice and interaction.user.voice.channel:
+            vc = voice_channel_mgr.get_voice_client(guild_id)
+            if not vc or not vc.is_connected():
+                await voice_channel_mgr.join_channel(interaction.user.voice.channel)
+
+        audio_file, song = await self._handle_sing(theme=theme, guild_id=guild_id)
+        if not audio_file:
+            await interaction.followup.send("❌ Không thể cất giọng hát vào thời điểm này.")
+            return
+
+        embed = create_song_embed(song)
+        discord_file = discord.File(audio_file, filename="neneka_singing.mp3")
+        await interaction.followup.send(embed=embed, file=discord_file)
 
     @app_commands.command(name="radio", description="📻 Phát một câu thoại ngẫu nhiên của Neneka trong Voice Channel")
     async def cmd_radio(self, interaction: discord.Interaction):
@@ -210,6 +252,25 @@ class VoiceCog(commands.Cog):
             if not is_ja:
                 display_msg = f"🇻🇳 *\"{text}\"*\n" + display_msg
             await ctx.reply(display_msg, file=discord_file)
+
+    @commands.command(name="sing", aliases=["hat", "song", "uta"])
+    async def pcmd_sing(self, ctx: commands.Context, *, theme: Optional[str] = None):
+        """Lệnh !n sing [chủ đề] để Neneka hát một bài ngẫu nhiên theo phong cách Nhật Bản"""
+        if ctx.guild and ctx.author.voice and ctx.author.voice.channel:
+            vc = voice_channel_mgr.get_voice_client(ctx.guild.id)
+            if not vc or not vc.is_connected():
+                await voice_channel_mgr.join_channel(ctx.author.voice.channel)
+
+        async with ctx.typing():
+            guild_id = ctx.guild.id if ctx.guild else None
+            audio_file, song = await self._handle_sing(theme=theme, guild_id=guild_id)
+            if not audio_file:
+                await ctx.reply("❌ Không thể cất giọng hát vào thời điểm này.")
+                return
+
+            embed = create_song_embed(song)
+            discord_file = discord.File(audio_file, filename="neneka_singing.mp3")
+            await ctx.reply(embed=embed, file=discord_file)
 
     @commands.command(name="join", aliases=["j", "vao"])
     async def pcmd_join(self, ctx: commands.Context):

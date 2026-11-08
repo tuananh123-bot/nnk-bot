@@ -70,3 +70,4 @@ async def test_get_vietnam_context_for_prompt():
     assert "### THÔNG TIN THỜI GIAN & THỜI TIẾT THỰC TẾ (VIỆT NAM - UTC+7):" in prompt_snippet
     assert "TP. Hồ Chí Minh" in prompt_snippet
     assert "### QUY TẮC NHẬN THỨC CỦA NENEKA:" in prompt_snippet
+

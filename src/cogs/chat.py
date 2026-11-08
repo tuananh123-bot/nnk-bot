@@ -18,6 +18,8 @@ from src.utils.vietnam_context import (
     get_vietnam_weather_info,
     get_vietnam_context_for_prompt
 )
+from src.voice.song_manager import is_singing_request, create_song_embed
+from src.voice.voice_channel import voice_channel_mgr
 
 logger = logging.getLogger("Neneka.Chat")
 
@@ -297,6 +299,7 @@ class ChatCog(commands.Cog):
         embed.add_field(name="`/story [từ khóa]`", value="Tra cứu cốt truyện Canon và ký ức lưu trữ.", inline=False)
         embed.add_field(name="`/memory` & `/forget`", value="Quản lý và minh bạch ký ức dài hạn.", inline=False)
         embed.add_field(name="`!n speak <câu>` hoặc `/speak`", value="Yêu cầu Neneka cất giọng tiếng Nhật (Fish Audio Metamorph Regnant).", inline=False)
+        embed.add_field(name="`!n sing [chủ đề]` hoặc `/sing`", value="Yêu cầu Neneka cất giọng hát bài ngẫu nhiên theo phong cách Nhật Bản.", inline=False)
         embed.add_field(name="`!n join` & `!n leave`", value="Mời Neneka vào hoặc rời phòng thoại (Voice Channel).", inline=False)
         embed.add_field(name="`!n quote` & `!n radio`", value="Phát câu thoại kinh điển gốc hoặc lời chào ngẫu nhiên trong Voice.", inline=False)
         embed.add_field(name="`/autochat` & `/autonomous`", value="Lệnh quản trị cấu hình kênh và chế độ tự động.", inline=False)
@@ -350,7 +353,25 @@ class ChatCog(commands.Cog):
             logger.debug(f"Rate limited message from {message.author.id}: {rl_reason}")
             return
 
-        # 5. Tạo phản hồi và gửi
+        # 5. Kiểm tra nếu người dùng yêu cầu Neneka hát trong hội thoại tự nhiên
+        if is_singing_request(clean_content):
+            async with message.channel.typing():
+                voice_cog = self.bot.get_cog("VoiceCog")
+                if voice_cog:
+                    guild_id = message.guild.id if message.guild else None
+                    if message.guild and message.author.voice and message.author.voice.channel:
+                        vc = voice_channel_mgr.get_voice_client(guild_id)
+                        if not vc or not vc.is_connected():
+                            await voice_channel_mgr.join_channel(message.author.voice.channel)
+
+                    audio_file, song = await voice_cog._handle_sing(theme=clean_content, guild_id=guild_id)
+                    if audio_file:
+                        embed = create_song_embed(song)
+                        discord_file = discord.File(audio_file, filename="neneka_singing.mp3")
+                        await message.reply(embed=embed, file=discord_file)
+                        return
+
+        # 6. Tạo phản hồi hội thoại thông thường và gửi
         async with message.channel.typing():
             reply_text = await self._generate_neneka_reply(
                 user_message=clean_content,

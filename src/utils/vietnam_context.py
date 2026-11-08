@@ -281,3 +281,4 @@ async def get_vietnam_context_for_prompt(user_message: str = "") -> str:
         f"4. Thể hiện phong thái quý cô Thất Vương tao nhã, ân cần và hơi trêu đùa; có thể so sánh thời tiết với Landosol hoặc nhắc nhở hiệp sĩ mặc áo ấm, mang theo ô nếu có mưa."
     )
     return prompt_snippet
+
