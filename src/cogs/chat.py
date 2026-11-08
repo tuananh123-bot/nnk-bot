@@ -13,6 +13,11 @@ from src.personality.engine import PersonalityEngine
 from src.memory.engine import MemoryEngine
 from src.bond.engine import BondEngine
 from src.autonomous.proactive_engine import proactive_engine
+from src.utils.vietnam_context import (
+    get_vietnam_time_info,
+    get_vietnam_weather_info,
+    get_vietnam_context_for_prompt
+)
 
 logger = logging.getLogger("Neneka.Chat")
 
@@ -59,6 +64,9 @@ class ChatCog(commands.Cog):
             user_name=f"{preferred_name} (Danh xưng phù hợp: {salutation})"
         )
 
+        # Ngữ cảnh thời gian và thời tiết thực tế tại Việt Nam (UTC+7)
+        vietnam_context = await get_vietnam_context_for_prompt(user_message)
+
         memory_section = ""
         if mem_ctx["relevant_facts"]:
             memory_section += "\n### KÝ ỨC DÀI HẠN LIÊN QUAN VỀ NGƯỜI ĐỐI THOẠI:\n" + "\n".join(mem_ctx["relevant_facts"])
@@ -68,7 +76,7 @@ class ChatCog(commands.Cog):
             history_messages.append({"role": "user", "content": h["user"]})
             history_messages.append({"role": "assistant", "content": h["neneka"]})
 
-        full_system_prompt = f"{base_system_prompt}\n{memory_section}"
+        full_system_prompt = f"{base_system_prompt}\n\n{vietnam_context}\n{memory_section}"
 
         # 6. Gọi Groq LLM
         messages = [{"role": "system", "content": full_system_prompt}]
@@ -118,6 +126,59 @@ class ChatCog(commands.Cog):
             ephemeral=False
         )
 
+    @app_commands.command(name="time", description="🕒 Xem thời gian thực tế tại Việt Nam (UTC+7) qua nhận thức của Neneka")
+    async def cmd_time(self, interaction: discord.Interaction):
+        time_info = get_vietnam_time_info()
+        embed = discord.Embed(
+            title="🕒 Thời Gian Thực Tế • Việt Nam (UTC+7)",
+            description=f"*{time_info['greeting']}, {interaction.user.display_name}!*",
+            color=0x9b59b6
+        )
+        embed.add_field(name="⏰ Giờ Hiện Tại", value=f"**{time_info['time_str']}** (UTC+7)", inline=True)
+        embed.add_field(name="📅 Ngày & Thứ", value=f"**{time_info['day_of_week']}**, {time_info['date_str']}", inline=True)
+        embed.add_field(name="🌅 Buổi", value=f"**{time_info['period'].capitalize()}**", inline=True)
+        embed.add_field(name="💜 Lời Dặn Của Thất Vương", value=f"*{time_info['care_tip']}*", inline=False)
+        embed.set_footer(text="Seven Crowns Real-Time Chronometer • Princess Connect! Re:Dive")
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="weather", description="🌤️ Tra cứu thời tiết thực tế hôm nay tại Việt Nam qua nhận thức của Neneka")
+    @app_commands.describe(location="Tên thành phố (Hà Nội, Sài Gòn, Đà Nẵng, Đà Lạt, Nha Trang, Hải Phòng, Cần Thơ...)")
+    async def cmd_weather(self, interaction: discord.Interaction, location: Optional[str] = None):
+        await interaction.response.defer()
+        time_info = get_vietnam_time_info()
+        weather_list = await get_vietnam_weather_info(location)
+        if not weather_list:
+            await interaction.followup.send("Fufu... Ma lực khí tượng đang có chút nhiễu loạn, ta chưa thể đo lường thời tiết vùng này lúc này được.")
+            return
+
+        embed = discord.Embed(
+            title=f"🌤️ Thời Tiết Thực Tế • Việt Nam ({time_info['time_str']} - {time_info['day_of_week']})",
+            description="*Dữ liệu đo đạc khí tượng vệ tinh thời gian thực:*",
+            color=0x3498db
+        )
+        for w in weather_list:
+            rain_text = f" | 🌧️ Mưa: `{w['rain_mm']} mm`" if w.get('rain_mm', 0) > 0 else ""
+            val = (
+                f"**{w['weather_desc']}**\n"
+                f"🌡️ Nhiệt độ: **{w['temperature']}°C** *(cảm giác như {w['apparent_temperature']}°C)*\n"
+                f"💧 Độ ẩm: `{w['humidity']}%` | 💨 Gió: `{w['wind_speed_kmh']} km/h`{rain_text}"
+            )
+            embed.add_field(name=f"📍 {w['city_name']}", value=val, inline=False)
+
+        comment_prompt = (
+            f"Dữ liệu thời tiết hiện tại: {weather_list[0]['city_name']} {weather_list[0]['temperature']}°C, {weather_list[0]['weather_desc']}. "
+            f"Thời gian: {time_info['formatted_summary']}. "
+            "Đưa ra 1 câu nhận xét/nhắc nhở ngắn gọn, tao nhã, quan tâm chu đáo theo phong thái Thất Vương Neneka."
+        )
+        try:
+            comment = await groq_client.chat_completion([{"role": "user", "content": comment_prompt}], max_tokens=100)
+        except Exception:
+            comment = "Fufu... Dù thời tiết thế nào thì cậu cũng nhớ chăm sóc bản thân thật tốt nhé."
+
+        embed.add_field(name="💜 Nhận Xét Của Neneka", value=f"*{comment.strip()}*", inline=False)
+        embed.set_footer(text="Open-Meteo Real-Time Weather • Seven Crowns Intelligence")
+        await interaction.followup.send(embed=embed)
+
     # =========================================================================
     # LEGACY PREFIX COMMANDS (!n, n!)
     # =========================================================================
@@ -165,6 +226,60 @@ class ChatCog(commands.Cog):
 
             await ctx.reply(embed=embed)
 
+    @commands.command(name="time")
+    async def pcmd_time(self, ctx):
+        """Xem thời gian thực tế tại Việt Nam (UTC+7)"""
+        time_info = get_vietnam_time_info()
+        embed = discord.Embed(
+            title="🕒 Thời Gian Thực Tế • Việt Nam (UTC+7)",
+            description=f"*{time_info['greeting']}, {ctx.author.display_name}!*",
+            color=0x9b59b6
+        )
+        embed.add_field(name="⏰ Giờ Hiện Tại", value=f"**{time_info['time_str']}** (UTC+7)", inline=True)
+        embed.add_field(name="📅 Ngày & Thứ", value=f"**{time_info['day_of_week']}**, {time_info['date_str']}", inline=True)
+        embed.add_field(name="🌅 Buổi", value=f"**{time_info['period'].capitalize()}**", inline=True)
+        embed.add_field(name="💜 Lời Dặn Của Thất Vương", value=f"*{time_info['care_tip']}*", inline=False)
+        embed.set_footer(text="Seven Crowns Real-Time Chronometer • Princess Connect! Re:Dive")
+        await ctx.reply(embed=embed)
+
+    @commands.command(name="weather")
+    async def pcmd_weather(self, ctx, *, location: Optional[str] = None):
+        """Tra cứu thời tiết thực tế hôm nay tại Việt Nam"""
+        async with ctx.typing():
+            time_info = get_vietnam_time_info()
+            weather_list = await get_vietnam_weather_info(location)
+            if not weather_list:
+                await ctx.reply("Fufu... Ma lực khí tượng đang có chút nhiễu loạn, ta chưa thể đo lường thời tiết vùng này lúc này được.")
+                return
+
+            embed = discord.Embed(
+                title=f"🌤️ Thời Tiết Thực Tế • Việt Nam ({time_info['time_str']} - {time_info['day_of_week']})",
+                description="*Dữ liệu đo đạc khí tượng vệ tinh thời gian thực:*",
+                color=0x3498db
+            )
+            for w in weather_list:
+                rain_text = f" | 🌧️ Mưa: `{w['rain_mm']} mm`" if w.get('rain_mm', 0) > 0 else ""
+                val = (
+                    f"**{w['weather_desc']}**\n"
+                    f"🌡️ Nhiệt độ: **{w['temperature']}°C** *(cảm giác như {w['apparent_temperature']}°C)*\n"
+                    f"💧 Độ ẩm: `{w['humidity']}%` | 💨 Gió: `{w['wind_speed_kmh']} km/h`{rain_text}"
+                )
+                embed.add_field(name=f"📍 {w['city_name']}", value=val, inline=False)
+
+            comment_prompt = (
+                f"Dữ liệu thời tiết hiện tại: {weather_list[0]['city_name']} {weather_list[0]['temperature']}°C, {weather_list[0]['weather_desc']}. "
+                f"Thời gian: {time_info['formatted_summary']}. "
+                "Đưa ra 1 câu nhận xét/nhắc nhở ngắn gọn, tao nhã, quan tâm chu đáo theo phong thái Thất Vương Neneka."
+            )
+            try:
+                comment = await groq_client.chat_completion([{"role": "user", "content": comment_prompt}], max_tokens=100)
+            except Exception:
+                comment = "Fufu... Dù thời tiết thế nào thì cậu cũng nhớ chăm sóc bản thân thật tốt nhé."
+
+            embed.add_field(name="💜 Nhận Xét Của Neneka", value=f"*{comment.strip()}*", inline=False)
+            embed.set_footer(text="Open-Meteo Real-Time Weather • Seven Crowns Intelligence")
+            await ctx.reply(embed=embed)
+
     @commands.command(name="help")
     async def pcmd_help(self, ctx):
         """Hiển thị hướng dẫn lệnh"""
@@ -174,6 +289,8 @@ class ChatCog(commands.Cog):
             color=0x9b59b6
         )
         embed.add_field(name="`/chat <lời nhắn>` hoặc `!n chat`", value="Trò chuyện trực tiếp cùng Neneka.", inline=False)
+        embed.add_field(name="`/time` hoặc `!n time`", value="Xem giờ, thứ, ngày tháng và buổi hiện tại tại Việt Nam.", inline=False)
+        embed.add_field(name="`/weather [nơi]` hoặc `!n weather [nơi]`", value="Tra cứu thời tiết thực tế tại Việt Nam (Hà Nội, Sài Gòn, Đà Nẵng, Đà Lạt...).", inline=False)
         embed.add_field(name="`/neneka`", value="Xem hồ sơ nhân vật Thất Vương.", inline=False)
         embed.add_field(name="`/costume [tên]`", value="Xem hoặc chuyển đổi trang phục (original, new_year, alpha).", inline=False)
         embed.add_field(name="`/bond` hoặc `!n status`", value="Kiểm tra cấp độ gắn kết và điểm hảo cảm.", inline=False)
