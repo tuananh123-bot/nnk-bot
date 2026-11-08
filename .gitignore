@@ -10,4 +10,8 @@ run_discord.bat
 temp_audio/
 *.mp3
 *.wav
+.pytest_cache/
+.coverage
+htmlcov/
+
 
