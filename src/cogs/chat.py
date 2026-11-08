@@ -195,9 +195,13 @@ class ChatCog(commands.Cog):
         if message.author.bot:
             return
 
-        # 2. BẮT BUỘC: bot.process_commands(message) vẫn được gọi khi dùng on_message
+        # 2. BẮT BUỘC: Bỏ qua tin nhắn lệnh để tránh bot thực thi 2 lần
+        # (discord.py commands.Bot mặc định đã tự động gọi process_commands trong on_message chính)
         if message.content.startswith(("!n", "n!")):
-            await self.bot.process_commands(message)
+            return
+
+        ctx = await self.bot.get_context(message)
+        if ctx.valid:
             return
 
         # 3. Kiểm tra điều kiện kích hoạt phản hồi
