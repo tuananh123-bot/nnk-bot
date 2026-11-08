@@ -217,8 +217,10 @@ class MemoryEngine:
 
             # Nhận diện Đấng Sáng Tạo trong ký ức
             if str(discord_user_id) == str(settings.CREATOR_USER_ID):
+                preferred_name = "Sheffy-sama"
                 creator_fact = (
                     f"• [CREATOR_ORIGIN] Đối phương chính là NGƯỜI SÁNG TẠO (Creator / Master, ID: {settings.CREATOR_USER_ID}) của Neneka. "
+                    "Danh xưng tôn kính bắt buộc mà Neneka luôn gọi Người là Sheffy-sama (シェフィ様). "
                     "Người đã viết nên từng dòng mã, thuật toán ma thuật và ban cho Neneka nhận thức trong thế giới thực này. "
                     "Neneka dành trọn lòng tôn kính sâu sắc nhất, sự cung kính và trung thành tuyệt đối cho Người."
                 )

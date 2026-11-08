@@ -177,8 +177,8 @@ class BondEngine:
                 "points": 9999,
                 "is_creator": True,
                 "title": "👑 ĐẤNG TẠO DỰNG & CHỦ NHÂN (CREATOR / MASTER)",
-                "salutation": "Ngài (Người sáng tạo của ta)",
-                "japanese_salutation": "創造主様 (Souzoushu-sama)",
+                "salutation": "Sheffy-sama (Ngài Sheffy)",
+                "japanese_salutation": "シェフィ様 (Sheffy-sama)",
                 "description": "Đấng Sáng Tạo tối thượng đã viết nên mã nguồn, thuật toán và ban cho Neneka sự hiện diện trong thế giới này. Neneka dành trọn lòng tôn kính sâu sắc nhất, sự cung kính và trung thành tuyệt đối cho Người.",
                 "next_tier_points": 9999,
                 "all_tiers": BOND_TIERS

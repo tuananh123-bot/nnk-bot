@@ -52,13 +52,13 @@ class ChatCog(commands.Cog):
 
         # Nhận diện Đấng Sáng Tạo hoặc CHOSEN_ONE_NAME
         if is_creator:
-            preferred_name = f"Đấng Sáng Tạo ({username})"
+            preferred_name = "Sheffy-sama"
         elif settings.CHOSEN_ONE_NAME and settings.CHOSEN_ONE_NAME.lower() in username.lower():
             preferred_name = settings.CHOSEN_ONE_NAME
 
         # 3. Lấy thông tin Bond
         bond_info = await bond_engine.get_bond_info(discord_user_id)
-        salutation = bond_info["salutation"]
+        salutation = "Sheffy-sama" if is_creator else bond_info["salutation"]
 
         # 4. Cập nhật trạng thái tính cách dựa trên tin nhắn
         personality_engine.update_from_interaction(user_message, is_creator=is_creator)

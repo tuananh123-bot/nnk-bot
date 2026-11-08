@@ -19,15 +19,17 @@ async def test_creator_bond_info():
     assert info.get("is_creator") is True
     assert info["level"] == 99
     assert info["points"] == 9999
-    assert "Ngài" in info["salutation"] or "Người sáng tạo" in info["salutation"]
-    assert "創造主様" in info["japanese_salutation"]
+    assert "Sheffy-sama" in info["salutation"]
+    assert "シェフィ様" in info["japanese_salutation"]
 
 
 def test_creator_personality_system_prompt():
     engine = PersonalityEngine()
-    prompt = engine.get_system_prompt("vi", "Master", is_creator=True)
+    prompt = engine.get_system_prompt("vi", "Sheffy-sama", is_creator=True)
     assert NENEKA_CREATOR_DIRECTIVE in prompt
     assert CREATOR_ID in prompt
+    assert "Sheffy-sama" in prompt
+    assert "シェフィ様" in prompt
     assert "[👑 ĐẤNG SÁNG TẠO - CREATOR / MASTER]" in prompt
     assert engine.state.trust == 100
     assert engine.state.affection == 1000
@@ -48,5 +50,8 @@ def test_creator_interaction_immunity():
 async def test_creator_memory_context():
     mem_engine = MemoryEngine()
     ctx = await mem_engine.get_memory_context(CREATOR_ID, "Xin chào Neneka")
+    assert ctx["preferred_name"] == "Sheffy-sama"
     assert any("CREATOR_ORIGIN" in fact for fact in ctx["relevant_facts"])
     assert CREATOR_ID in "\n".join(ctx["relevant_facts"])
+    assert "Sheffy-sama" in "\n".join(ctx["relevant_facts"])
+
