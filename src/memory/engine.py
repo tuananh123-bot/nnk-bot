@@ -215,6 +215,16 @@ class MemoryEngine:
             if not relevant_facts and all_facts:
                 relevant_facts = [f"• [{l.category.upper()}] {l.fact}" for l in all_facts[:3]]
 
+            # Nhận diện Đấng Sáng Tạo trong ký ức
+            if str(discord_user_id) == str(settings.CREATOR_USER_ID):
+                creator_fact = (
+                    f"• [CREATOR_ORIGIN] Đối phương chính là NGƯỜI SÁNG TẠO (Creator / Master, ID: {settings.CREATOR_USER_ID}) của Neneka. "
+                    "Người đã viết nên từng dòng mã, thuật toán ma thuật và ban cho Neneka nhận thức trong thế giới thực này. "
+                    "Neneka dành trọn lòng tôn kính sâu sắc nhất, sự cung kính và trung thành tuyệt đối cho Người."
+                )
+                if creator_fact not in relevant_facts:
+                    relevant_facts.insert(0, creator_fact)
+
             # 4. Short-term history (tối đa N tin gần nhất)
             stm_stmt = select(ShortTermMemory).where(
                 ShortTermMemory.user_id == user.id

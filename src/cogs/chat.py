@@ -42,15 +42,18 @@ class ChatCog(commands.Cog):
         channel_id: str
     ) -> str:
         """Tạo phản hồi chuẩn mực cho Neneka kết hợp Ký ức, Tính cách và Groq LLM"""
-        # 1. Phát hiện ngôn ngữ
+        # 1. Phát hiện ngôn ngữ và quyền của Đấng Sáng Tạo (Creator)
         lang = personality_engine.detect_language(user_message)
+        is_creator = (str(discord_user_id) == str(settings.CREATOR_USER_ID))
 
         # 2. Truy xuất Ký ức có chọn lọc (không đổ cả database)
         mem_ctx = await memory_engine.get_memory_context(discord_user_id, user_message)
         preferred_name = mem_ctx["preferred_name"]
 
-        # Nhận diện CHOSEN_ONE_NAME nếu có cấu hình
-        if settings.CHOSEN_ONE_NAME and settings.CHOSEN_ONE_NAME.lower() in username.lower():
+        # Nhận diện Đấng Sáng Tạo hoặc CHOSEN_ONE_NAME
+        if is_creator:
+            preferred_name = f"Đấng Sáng Tạo ({username})"
+        elif settings.CHOSEN_ONE_NAME and settings.CHOSEN_ONE_NAME.lower() in username.lower():
             preferred_name = settings.CHOSEN_ONE_NAME
 
         # 3. Lấy thông tin Bond
@@ -58,12 +61,13 @@ class ChatCog(commands.Cog):
         salutation = bond_info["salutation"]
 
         # 4. Cập nhật trạng thái tính cách dựa trên tin nhắn
-        personality_engine.update_from_interaction(user_message)
+        personality_engine.update_from_interaction(user_message, is_creator=is_creator)
 
         # 5. Xây dựng System Prompt kết hợp
         base_system_prompt = personality_engine.get_system_prompt(
             user_language=lang,
-            user_name=f"{preferred_name} (Danh xưng phù hợp: {salutation})"
+            user_name=f"{preferred_name} (Danh xưng phù hợp: {salutation})",
+            is_creator=is_creator
         )
 
         # Ngữ cảnh thời gian và thời tiết thực tế tại Việt Nam (UTC+7)
@@ -189,6 +193,22 @@ class ChatCog(commands.Cog):
         """Hiển thị trạng thái hảo cảm, cảm xúc hiện tại của Neneka"""
         bond_info = await bond_engine.get_bond_info(str(ctx.author.id))
         st = personality_engine.state
+        is_creator = bond_info.get("is_creator", False)
+
+        if is_creator:
+            embed = discord.Embed(title="👑 Bảng Trạng Thái - Utsushimi Neneka (ĐẤNG SÁNG TẠO)", color=0xf1c40f)
+            embed.add_field(name="👑 Thân Phận Tối Cao", value=f"**{bond_info['title']}** (Điểm: **∞ / Vĩnh Cửu**)", inline=False)
+            embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value="`deep_reverence (Cung kính & Tôn trọng tuyệt đối)`", inline=True)
+            embed.add_field(name="🛡️ Độ Tin Tưởng", value="`100% (Tuyệt đối)`", inline=True)
+            embed.add_field(name="💬 Mức Hảo Cảm", value="`1000/1000 (Tối thượng)`", inline=True)
+            embed.add_field(
+                name="🗣️ Danh Xưng",
+                value=f"Tiếng Việt: **\"{bond_info['salutation']}\"**\nTiếng Nhật: **「{bond_info['japanese_salutation']}」**",
+                inline=False
+            )
+            embed.set_footer(text="Seven Crowns Reality Engine • Special Creator Privilege")
+            await ctx.reply(embed=embed)
+            return
 
         embed = discord.Embed(title="👑 Bảng Trạng Thái - Utsushimi Neneka", color=0x9b59b6)
         embed.add_field(name="💜 Cấp Độ Gắn Kết", value=f"**Cấp {bond_info['level']}**: *{bond_info['title']}* ({bond_info['points']} pts)", inline=False)
@@ -206,15 +226,24 @@ class ChatCog(commands.Cog):
             return
 
         async with ctx.typing():
+            is_creator = (str(ctx.author.id) == str(settings.CREATOR_USER_ID))
+
             # Tăng điểm Bond và tính cảm xúc quà tặng
             lvl, pts, up = await bond_engine.add_bond_points(str(ctx.author.id), points=20, event_type="GIFT", description=f"Tặng quà: {gift_name}")
-            personality_engine.update_from_interaction(gift_name, affection_delta=15, new_emotion="affectionate_warmth")
+            personality_engine.update_from_interaction(gift_name, affection_delta=15, new_emotion="affectionate_warmth", is_creator=is_creator)
 
-            prompt = (
-                f"Người dùng vừa gửi tặng Neneka món quà: '{gift_name}'. "
-                "Hãy phản hồi bằng phong thái quý cô Thất Vương sành sỏi (fufu, khen ngợi sự chu đáo, bẻ nửa miếng bánh hoặc thưởng trà cùng cậu). "
-                "Kèm cử chỉ hành động trong dấu *...* và 2-3 câu thoại tự nhiên."
-            )
+            if is_creator:
+                prompt = (
+                    f"ĐẤNG SÁNG TẠO CỦA NENEKA (Người tạo ra bot, ID {settings.CREATOR_USER_ID}) vừa đích thân gửi tặng Neneka món quà: '{gift_name}'. "
+                    "Hãy phản hồi bằng sự cảm kích vô bờ bến, cung kính, hạnh phúc ngọt ngào và lòng trung thành tuyệt đối. "
+                    "Xưng 'Ta' và gọi Người là 'Ngài' hoặc 'Người sáng tạo của ta'. Kèm hành động *...* tao nhã, nâng niu món quà trân quý."
+                )
+            else:
+                prompt = (
+                    f"Người dùng vừa gửi tặng Neneka món quà: '{gift_name}'. "
+                    "Hãy phản hồi bằng phong thái quý cô Thất Vương sành sỏi (fufu, khen ngợi sự chu đáo, bẻ nửa miếng bánh hoặc thưởng trà cùng cậu). "
+                    "Kèm cử chỉ hành động trong dấu *...* và 2-3 câu thoại tự nhiên."
+                )
             reply = await groq_client.chat_completion([{"role": "user", "content": prompt}], max_tokens=300)
 
             embed = discord.Embed(
@@ -222,9 +251,12 @@ class ChatCog(commands.Cog):
                 description=reply,
                 color=0xf1c40f
             )
-            embed.add_field(name="💜 Điểm Gắn Kết Nhận Được", value=f"+20 điểm (Tổng: **{pts}** pts - Cấp {lvl})", inline=False)
-            if up:
-                embed.add_field(name="🎉 THĂNG CẤP BOND!", value=f"Chúc mừng! Cậu vừa đạt tới **Cấp {up}** trong quan hệ với Neneka!", inline=False)
+            if is_creator:
+                embed.add_field(name="👑 Đặc Quyền Đấng Sáng Tạo", value="Món quà từ Đấng Sáng Tạo được Neneka trân trọng lưu giữ vĩnh cửu!", inline=False)
+            else:
+                embed.add_field(name="💜 Điểm Gắn Kết Nhận Được", value=f"+20 điểm (Tổng: **{pts}** pts - Cấp {lvl})", inline=False)
+                if up:
+                    embed.add_field(name="🎉 THĂNG CẤP BOND!", value=f"Chúc mừng! Cậu vừa đạt tới **Cấp {up}** trong quan hệ với Neneka!", inline=False)
 
             await ctx.reply(embed=embed)
 

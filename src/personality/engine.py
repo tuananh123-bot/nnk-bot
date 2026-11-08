@@ -6,7 +6,8 @@ from src.personality.prompts import (
     NENEKA_CANON_BASE_PROMPT,
     NENEKA_VIETNAMESE_STYLE_PROMPT,
     NENEKA_JAPANESE_STYLE_PROMPT,
-    NENEKA_CANON_FACTS
+    NENEKA_CANON_FACTS,
+    NENEKA_CREATOR_DIRECTIVE
 )
 
 @dataclass
@@ -59,12 +60,29 @@ class PersonalityEngine:
         trust_delta: int = 0,
         irritation_delta: int = 0,
         amusement_delta: int = 0,
-        new_emotion: Optional[str] = None
+        new_emotion: Optional[str] = None,
+        is_creator: bool = False
     ):
         """Cập nhật các biến tính cách theo biến cố tương tác hợp lý"""
         lower = user_message.lower()
 
-        # 1. Phát hiện trêu chọc tuổi tác / chiều cao (Điểm nhạy cảm canon)
+        # Nếu là Đấng Sáng Tạo (Creator)
+        if is_creator:
+            self.state.trust = 100
+            self.state.affection = 1000
+            self.state.irritation = 0
+            if any(k in lower for k in ["bà già", "bà cô", "lùn", "nấm lùn", "bé hạt tiêu", "chân ngắn", "loli"]):
+                self.state.amusement = min(100, self.state.amusement + 15)
+                self.state.emotional_state = "affectionate_warmth"
+            elif any(k in lower for k in ["dễ thương", "đáng yêu", "xinh đẹp", "thích em", "yêu em", "tuyệt vời", "kawaii", "suki"]):
+                self.state.amusement = min(100, self.state.amusement + 20)
+                self.state.emotional_state = "affectionate_warmth"
+            else:
+                self.state.emotional_state = new_emotion or "deep_reverence"
+            self.state.clamp()
+            return
+
+        # 1. Phát hiện trêu chọc tuổi tác / chiều cao (Điểm nhạy cảm canon đối với người bình thường)
         if any(k in lower for k in ["bà già", "bà cô", "lùn", "nấm lùn", "bé hạt tiêu", "chân ngắn", "loli"]):
             self.state.irritation += 25
             self.state.amusement += 10
@@ -97,9 +115,19 @@ class PersonalityEngine:
 
         self.state.clamp()
 
-    def get_system_prompt(self, user_language: str = "vi", user_name: str = "Hiệp sĩ") -> str:
+    def get_system_prompt(
+        self,
+        user_language: str = "vi",
+        user_name: str = "Hiệp sĩ",
+        is_creator: bool = False
+    ) -> str:
         """Tổng hợp System Prompt đa tầng chuẩn mực cho Neneka"""
         st = self.state
+
+        if is_creator:
+            st.trust = 100
+            st.affection = 1000
+            st.irritation = 0
 
         if user_language == "ja":
             lang_instruction = "IMPORTANT: The user message is in Japanese. Reply in natural, elegant Japanese anime style adhering to the Japanese style prompt."
@@ -111,18 +139,20 @@ class PersonalityEngine:
             lang_instruction = "IMPORTANT: The user message is in Vietnamese. Reply in natural, anime-cadence Vietnamese adhering to the Vietnamese style prompt."
             style_section = NENEKA_VIETNAMESE_STYLE_PROMPT
 
+        creator_section = f"\n\n{NENEKA_CREATOR_DIRECTIVE}" if is_creator else ""
+
         state_summary = (
             f"### NENEKA REAL-TIME PERSONALITY MATRIX:\n"
             f"- Confidence: {st.confidence}/100 | Curiosity: {st.curiosity}/100\n"
             f"- Affection: {st.affection}/1000 | Trust: {st.trust}/100\n"
             f"- Amusement: {st.amusement}/100 | Irritation: {st.irritation}/100\n"
             f"- Seriousness: {st.seriousness}/100 | Current Emotion: {st.emotional_state}\n"
-            f"- Current Interlocutor: {user_name}"
+            f"- Current Interlocutor: {user_name} {'[👑 ĐẤNG SÁNG TẠO - CREATOR / MASTER]' if is_creator else ''}"
         )
 
         return f"""{NENEKA_CANON_BASE_PROMPT}
 
-{NENEKA_CANON_FACTS}
+{NENEKA_CANON_FACTS}{creator_section}
 
 {style_section}
 

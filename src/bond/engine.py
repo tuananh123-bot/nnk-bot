@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.connection import db_manager
 from src.database.models import User, BondProfile, BondEvent
+from src.config import settings
 
 logger = logging.getLogger("Neneka.Bond")
 
@@ -169,6 +170,20 @@ class BondEngine:
 
     async def get_bond_info(self, discord_user_id: str) -> Dict[str, Any]:
         """Lấy thông tin chi tiết cấp độ Bond hiện tại của người dùng"""
+        # Nhận diện đặc quyền tối cao của Đấng Sáng Tạo (Creator)
+        if str(discord_user_id) == str(settings.CREATOR_USER_ID):
+            return {
+                "level": 99,
+                "points": 9999,
+                "is_creator": True,
+                "title": "👑 ĐẤNG TẠO DỰNG & CHỦ NHÂN (CREATOR / MASTER)",
+                "salutation": "Ngài (Người sáng tạo của ta)",
+                "japanese_salutation": "創造主様 (Souzoushu-sama)",
+                "description": "Đấng Sáng Tạo tối thượng đã viết nên mã nguồn, thuật toán và ban cho Neneka sự hiện diện trong thế giới này. Neneka dành trọn lòng tôn kính sâu sắc nhất, sự cung kính và trung thành tuyệt đối cho Người.",
+                "next_tier_points": 9999,
+                "all_tiers": BOND_TIERS
+            }
+
         async for session in db_manager.get_session():
             stmt = select(User).where(User.discord_user_id == str(discord_user_id))
             user = (await session.execute(stmt)).scalar_one_or_none()

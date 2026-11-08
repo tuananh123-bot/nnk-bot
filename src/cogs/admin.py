@@ -13,15 +13,15 @@ class AdminCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="autochat", description="⚙️ Bật hoặc tắt tự động trò chuyện trong kênh này (Yêu cầu quyền Manage Channels)")
+    @app_commands.command(name="autochat", description="⚙️ Bật hoặc tắt tự động trò chuyện trong kênh này (Yêu cầu quyền Manage Channels hoặc Creator)")
     @app_commands.describe(status="Trạng thái: on (bật), off (tắt)")
     @app_commands.choices(status=[
         app_commands.Choice(name="✅ Bật tự động trả lời trong kênh", value="on"),
         app_commands.Choice(name="❎ Tắt tự động trả lời trong kênh", value="off")
     ])
-    @commands.has_permissions(manage_channels=True)
     async def cmd_autochat(self, interaction: discord.Interaction, status: str):
-        if not interaction.user.guild_permissions.manage_channels:
+        is_creator = (str(interaction.user.id) == str(settings.CREATOR_USER_ID))
+        if not is_creator and not (interaction.user.guild_permissions and interaction.user.guild_permissions.manage_channels):
             await interaction.response.send_message("❌ Bạn cần quyền `Manage Channels` để thực hiện thao tác này.", ephemeral=True)
             return
 
@@ -33,16 +33,16 @@ class AdminCog(commands.Cog):
             proactive_engine.remove_allowed_channel(cid)
             await interaction.response.send_message(f"❎ Đã **TẮT** chế độ tự động trò chuyện trong {interaction.channel.mention}.\nNeneka sẽ chỉ phản hồi khi được @mention.")
 
-    @app_commands.command(name="autonomous", description="⚙️ Cấu hình chế độ chủ động tương tác của Neneka")
+    @app_commands.command(name="autonomous", description="⚙️ Cấu hình chế độ chủ động tương tác của Neneka (Admin hoặc Creator)")
     @app_commands.describe(mode="Chọn chế độ hoạt động")
     @app_commands.choices(mode=[
         app_commands.Choice(name="Mode A: Mention Only (Chỉ trả lời khi được gọi)", value="MENTION"),
         app_commands.Choice(name="Mode B: Auto Chat (Tự động trò chuyện trong kênh cấp phép)", value="AUTO_CHAT"),
         app_commands.Choice(name="Mode C: Autonomous Character (Chủ động mở lời & chào đón)", value="AUTONOMOUS")
     ])
-    @commands.has_permissions(administrator=True)
     async def cmd_autonomous(self, interaction: discord.Interaction, mode: str):
-        if not interaction.user.guild_permissions.administrator:
+        is_creator = (str(interaction.user.id) == str(settings.CREATOR_USER_ID))
+        if not is_creator and not (interaction.user.guild_permissions and interaction.user.guild_permissions.administrator):
             await interaction.response.send_message("❌ Bạn cần quyền `Administrator` để đổi chế độ của bot.", ephemeral=True)
             return
 
@@ -53,8 +53,11 @@ class AdminCog(commands.Cog):
             await interaction.response.send_message("❌ Chế độ không hợp lệ.", ephemeral=True)
 
     @app_commands.command(name="admin", description="🛠️ Bảng điều khiển quản trị và trạng thái hệ thống")
-    @commands.has_permissions(administrator=True)
     async def cmd_admin(self, interaction: discord.Interaction):
+        is_creator = (str(interaction.user.id) == str(settings.CREATOR_USER_ID))
+        if not is_creator and not (interaction.user.guild_permissions and interaction.user.guild_permissions.administrator):
+            await interaction.response.send_message("❌ Bạn cần quyền `Administrator` để xem bảng quản trị.", ephemeral=True)
+            return
         db_type = "Async SQLite (Local Fallback)" if db_manager.is_sqlite_fallback else "PostgreSQL (Production)"
         cache_type = "In-Memory RAM" if cache._use_fallback else "Redis (Live)"
 

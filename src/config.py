@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     DISCORD_TOKEN: str = Field(default="", description="Discord Bot Token")
     COMMAND_PREFIXES: List[str] = Field(default=["!n ", "!n", "n! ", "n!"])
     CHOSEN_ONE_NAME: str = Field(default="Kishi-kun", description="Tên định danh người dùng đặc biệt / Hiệp sĩ")
+    CREATOR_USER_ID: str = Field(default="483169533922639902", description="Discord ID của Người Tạo Ra Bot / Creator")
     AUTO_REPLY_CHANNELS: str = Field(default="", description="Comma-separated channel IDs")
 
     # Groq & LLM

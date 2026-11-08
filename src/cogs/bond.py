@@ -23,21 +23,31 @@ class BondCog(commands.Cog):
         lvl = info["level"]
         next_pts = info["next_tier_points"]
 
-        bar_total = 12
-        if next_pts > 0:
-            filled = min(bar_total, int((pts / next_pts) * bar_total))
+        is_creator = info.get("is_creator", False)
+        if is_creator:
+            bar = "█" * 12
+            pts_val = f"[{bar}] **∞ / ∞ pts** (VĨNH CỬU)"
+            color = 0xf1c40f
+            title_text = f"👑 Đặc Quyền Gắn Kết - {target.display_name} (ĐẤNG SÁNG TẠO)"
         else:
-            filled = bar_total
-        bar = "█" * filled + "░" * (bar_total - filled)
+            bar_total = 12
+            if next_pts > 0:
+                filled = min(bar_total, int((pts / next_pts) * bar_total))
+            else:
+                filled = bar_total
+            bar = "█" * filled + "░" * (bar_total - filled)
+            pts_val = f"[{bar}] **{pts}** / {next_pts} pts"
+            color = 0xff79c6
+            title_text = f"💜 Cấp Độ Gắn Kết - {target.display_name}"
 
         embed = discord.Embed(
-            title=f"💜 Cấp Độ Gắn Kết - {target.display_name}",
-            description=f"**Cấp {lvl}: {info['title']}**\n*{info['description']}*",
-            color=0xff79c6
+            title=title_text,
+            description=f"**{info['title']}**\n*{info['description']}*",
+            color=color
         )
         embed.add_field(
             name="📊 Điểm Gắn Kết",
-            value=f"[{bar}] **{pts}** / {next_pts} pts",
+            value=pts_val,
             inline=False
         )
         embed.add_field(

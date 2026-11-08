@@ -63,3 +63,4 @@ def test_create_song_embed():
     assert "🇯🇵 Lời Bài Hát (Japanese)" in fields
     assert "🔤 Phiên Âm (Romaji)" in fields
     assert "🇻🇳 Dịch Nghĩa (Tiếng Việt)" in fields
+
