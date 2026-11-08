@@ -27,3 +27,16 @@ def test_discord_message_routing_modes():
     )
     assert should_mentioned
 
+def test_voice_cog_prefix_commands():
+    from src.cogs.voice import VoiceCog
+    from src.bot import bot
+    cog = VoiceCog(bot)
+    commands_map = {cmd.name: cmd for cmd in cog.get_commands()}
+    assert "speak" in commands_map
+    assert "join" in commands_map
+    assert "leave" in commands_map
+    assert "radio" in commands_map
+    assert "quote" in commands_map
+    assert "s" in commands_map["speak"].aliases
+
+
