@@ -46,3 +46,4 @@ def test_natural_nickname_regex():
     assert m3 is not None
     assert "mình" in m3.group(1).lower()
     assert "Hiệp Sĩ" in m3.group(2)
+

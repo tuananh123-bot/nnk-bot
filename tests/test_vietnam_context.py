@@ -56,18 +56,30 @@ async def test_get_vietnam_weather_live():
     assert "weather_desc" in w
     assert w["status"] == "success"
 
-    # Kiểm tra lấy thời tiết mặc định (Hà Nội & TP.HCM)
-    default_w = await get_vietnam_weather_info()
-    assert len(default_w) == 2
-    city_names = [item["city_name"] for item in default_w]
-    assert "Hà Nội" in city_names
-    assert "TP. Hồ Chí Minh" in city_names
+    # Kiểm tra không còn mặc định ở Hà Nội khi không có địa điểm
+    empty_w = await get_vietnam_weather_info()
+    assert empty_w == [], "Không được mặc định trả về Hà Nội khi chưa biết vị trí người dùng"
+
+    # Kiểm tra lấy thời tiết theo nơi ở đã lưu của người dùng
+    user_w = await get_vietnam_weather_info(user_location="Sài Gòn")
+    assert len(user_w) == 1
+    assert user_w[0]["city_name"] == "TP. Hồ Chí Minh"
 
 
 @pytest.mark.asyncio
 async def test_get_vietnam_context_for_prompt():
+    # Trường hợp chỉ định trong tin nhắn
     prompt_snippet = await get_vietnam_context_for_prompt("Hôm nay Sài Gòn mưa không?")
     assert "### THÔNG TIN THỜI GIAN & THỜI TIẾT THỰC TẾ (VIỆT NAM - UTC+7):" in prompt_snippet
     assert "TP. Hồ Chí Minh" in prompt_snippet
     assert "### QUY TẮC NHẬN THỨC CỦA NENEKA:" in prompt_snippet
+
+    # Trường hợp không có địa điểm và chưa lưu nơi ở -> Tuyệt đối không tự ý nói Hà Nội
+    unknown_prompt = await get_vietnam_context_for_prompt("Thời tiết hôm nay thế nào?")
+    assert "Chưa xác định được vị trí" in unknown_prompt
+    assert "TUYỆT ĐỐI KHÔNG được tự ý mặc định hay bịa đặt rằng người đối thoại đang ở Hà Nội" in unknown_prompt
+
+    # Trường hợp người dùng có nơi ở đã lưu (ví dụ: Đà Nẵng)
+    saved_prompt = await get_vietnam_context_for_prompt("Hôm nay có cần mang ô không?", user_location="Đà Nẵng")
+    assert "Đà Nẵng" in saved_prompt
 

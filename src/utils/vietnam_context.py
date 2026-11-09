@@ -67,7 +67,17 @@ CITIES_VN: Dict[str, Tuple[float, float, str]] = {
     "quangninh": (20.9505, 107.0733, "Quảng Ninh (Hạ Long)"),
     "sapa": (22.3364, 103.8438, "Sa Pa (Lào Cai)"),
     "quynhon": (13.7820, 109.2197, "Quy Nhơn"),
-    "buonmathuot": (12.6667, 108.0383, "Buôn Ma Thuột")
+    "buonmathuot": (12.6667, 108.0383, "Buôn Ma Thuột"),
+    "binhduong": (11.1322, 106.6667, "Bình Dương"),
+    "dongnai": (10.9574, 106.8427, "Đồng Nai"),
+    "thanhhoa": (19.8075, 105.7764, "Thanh Hóa"),
+    "nghean": (18.6796, 105.6813, "Nghệ An"),
+    "tiengiang": (10.3544, 106.3653, "Tiền Giang"),
+    "bacninh": (21.1861, 106.0763, "Bắc Ninh"),
+    "thainguyen": (21.5942, 105.8481, "Thái Nguyên"),
+    "kiengiang": (10.0125, 105.0809, "Kiên Giang"),
+    "angiang": (10.3759, 105.4185, "An Giang"),
+    "vinhlong": (10.2537, 105.9722, "Vĩnh Long")
 }
 
 CITY_ALIASES: Dict[str, str] = {
@@ -76,14 +86,24 @@ CITY_ALIASES: Dict[str, str] = {
     "đà nẵng": "danang", "da nang": "danang", "danang": "danang", "dn": "danang",
     "hải phòng": "haiphong", "hai phong": "haiphong", "haiphong": "haiphong", "hp": "haiphong",
     "cần thơ": "cantho", "can tho": "cantho", "cantho": "cantho",
-    "đà lạt": "dalat", "da lat": "dalat", "dalat": "dalat",
-    "nha trang": "nhatrang", "nhatrang": "nhatrang",
-    "huế": "hue", "hue": "hue",
-    "vũng tàu": "vungtau", "vung tau": "vungtau", "vungtau": "vungtau",
+    "đà lạt": "dalat", "da lat": "dalat", "dalat": "dalat", "lâm đồng": "dalat", "lam dong": "dalat",
+    "nha trang": "nhatrang", "nhatrang": "nhatrang", "khánh hòa": "nhatrang", "khanh hoa": "nhatrang",
+    "huế": "hue", "hue": "hue", "thừa thiên": "hue", "thua thien": "hue",
+    "vũng tàu": "vungtau", "vung tau": "vungtau", "vungtau": "vungtau", "bà rịa": "vungtau", "ba ria": "vungtau",
     "hạ long": "quangninh", "ha long": "quangninh", "quảng ninh": "quangninh", "quang ninh": "quangninh",
     "sa pa": "sapa", "sapa": "sapa", "lào cai": "sapa", "lao cai": "sapa",
     "quy nhơn": "quynhon", "quy nhon": "quynhon", "bình định": "quynhon", "binh dinh": "quynhon",
-    "buôn ma thuột": "buonmathuot", "buon ma thuot": "buonmathuot", "đắk lắk": "buonmathuot", "dak lak": "buonmathuot"
+    "buôn ma thuột": "buonmathuot", "buon ma thuot": "buonmathuot", "đắk lắk": "buonmathuot", "dak lak": "buonmathuot",
+    "bình dương": "binhduong", "binh duong": "binhduong", "thủ dầu một": "binhduong",
+    "đồng nai": "dongnai", "dong nai": "dongnai", "biên hòa": "dongnai", "bien hoa": "dongnai",
+    "thanh hóa": "thanhhoa", "thanh hoa": "thanhhoa",
+    "nghệ an": "nghean", "nghe an": "nghean", "vinh": "nghean",
+    "tiền giang": "tiengiang", "tien giang": "tiengiang", "mỹ tho": "tiengiang", "my tho": "tiengiang",
+    "bắc ninh": "bacninh", "bac ninh": "bacninh",
+    "thái nguyên": "thainguyen", "thai nguyen": "thainguyen",
+    "kiên giang": "kiengiang", "kien giang": "kiengiang", "phú quốc": "kiengiang", "phu quoc": "kiengiang", "rạch giá": "kiengiang",
+    "an giang": "angiang", "an giang": "angiang", "long xuyên": "angiang", "châu đốc": "angiang",
+    "vĩnh long": "vinhlong", "vinh long": "vinhlong"
 }
 
 # Cache thời tiết trong RAM (TTL 15 phút = 900 giây)
@@ -227,46 +247,64 @@ async def fetch_weather_for_coords(lat: float, lon: float, city_name: str) -> Op
     return None
 
 
-async def get_vietnam_weather_info(city_query: Optional[str] = None) -> List[Dict[str, Any]]:
+async def get_vietnam_weather_info(
+    city_query: Optional[str] = None,
+    user_location: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """
     Lấy thông tin thời tiết:
-    - Nếu có thành phố chỉ định -> Trả về thời tiết thành phố đó.
-    - Nếu không chỉ định -> Trả về thời tiết 2 đầu đất nước (Hà Nội & TP. Hồ Chí Minh).
+    - Ưu tiên 1: Thành phố chỉ định trong câu hỏi (city_query).
+    - Ưu tiên 2: Nơi sinh sống / vị trí đã lưu của người dùng (user_location).
+    - Tuyệt đối KHÔNG tự ý mặc định ở Hà Nội nếu người dùng chưa cung cấp vị trí.
     """
-    detected_key = detect_city_from_query(city_query) if city_query else None
+    target_city = None
 
-    if detected_key and detected_key in CITIES_VN:
-        lat, lon, name = CITIES_VN[detected_key]
+    # 1. Kiểm tra thành phố trong query
+    if city_query:
+        target_city = detect_city_from_query(city_query)
+
+    # 2. Nếu trong query không có thành phố -> Lấy theo nơi ở đã lưu của người dùng
+    if not target_city and user_location:
+        target_city = detect_city_from_query(user_location)
+
+    # 3. Lấy dữ liệu thời tiết cho thành phố tìm được
+    if target_city and target_city in CITIES_VN:
+        lat, lon, name = CITIES_VN[target_city]
         w = await fetch_weather_for_coords(lat, lon, name)
         return [w] if w else []
 
-    # Mặc định lấy Hà Nội và TP. Hồ Chí Minh
-    results = []
-    hn_w = await fetch_weather_for_coords(CITIES_VN["hanoi"][0], CITIES_VN["hanoi"][1], CITIES_VN["hanoi"][2])
-    if hn_w:
-        results.append(hn_w)
-    hcm_w = await fetch_weather_for_coords(CITIES_VN["hcm"][0], CITIES_VN["hcm"][1], CITIES_VN["hcm"][2])
-    if hcm_w:
-        results.append(hcm_w)
-    return results
+    # 4. Nếu không có địa điểm nào được chỉ định và người dùng chưa lưu nơi ở -> Trả về rỗng (KHÔNG đoán mò)
+    return []
 
 
-async def get_vietnam_context_for_prompt(user_message: str = "") -> str:
+async def get_vietnam_context_for_prompt(
+    user_message: str = "",
+    user_location: Optional[str] = None
+) -> str:
     """
     Xây dựng đoạn ngữ cảnh thời gian và thời tiết thực tế tại Việt Nam để chèn vào System Prompt của Neneka.
     """
     time_info = get_vietnam_time_info()
-    weather_list = await get_vietnam_weather_info(user_message)
+    weather_list = await get_vietnam_weather_info(user_message, user_location=user_location)
 
-    weather_lines = []
-    for w in weather_list:
+    if weather_list:
+        w = weather_list[0]
         rain_note = f", có mưa ({w['rain_mm']}mm)" if w.get("rain_mm", 0) > 0 else ""
-        weather_lines.append(
-            f"- {w['city_name']}: {w['weather_desc']}, Nhiệt độ {w['temperature']}°C "
-            f"(cảm giác như {w['apparent_temperature']}°C), Độ ẩm {w['humidity']}%, Gió {w['wind_speed_kmh']} km/h{rain_note}."
+        weather_text = (
+            f"- Thời tiết thực tế tại {w['city_name']} (Nơi ở / địa điểm liên quan của đối phương): "
+            f"{w['weather_desc']}, Nhiệt độ {w['temperature']}°C (cảm giác như {w['apparent_temperature']}°C), "
+            f"Độ ẩm {w['humidity']}%, Gió {w['wind_speed_kmh']} km/h{rain_note}."
         )
-
-    weather_text = "\n".join(weather_lines) if weather_lines else "- Đang cập nhật dữ liệu thời tiết Việt Nam."
+        weather_instruction = (
+            f"1. Ngươi có nhận thức thời tiết thực tế chính xác tại {w['city_name']}.\n"
+            f"2. Khi đối phương hỏi về thời tiết hôm nay, hãy trả lời chính xác theo số liệu tại {w['city_name']} ở trên."
+        )
+    else:
+        weather_text = "- Chưa xác định được vị trí / nơi sinh sống của người đối thoại (Chưa lưu nơi ở và không nói rõ thành phố)."
+        weather_instruction = (
+            "1. TUYỆT ĐỐI KHÔNG được tự ý mặc định hay bịa đặt rằng người đối thoại đang ở Hà Nội hay bất kỳ nơi nào khác.\n"
+            "2. Khi đối phương hỏi 'thời tiết hôm nay thế nào', hãy hỏi lại một cách tao nhã, quan tâm xem Người/cậu ấy đang ở thành phố nào tại Việt Nam (ví dụ Sài Gòn, Đà Nẵng,...) để đo lường chính xác, hoặc hướng dẫn họ dùng lệnh `!n location <tên thành phố>` để lưu lại."
+        )
 
     prompt_snippet = (
         f"### THÔNG TIN THỜI GIAN & THỜI TIẾT THỰC TẾ (VIỆT NAM - UTC+7):\n"
@@ -275,9 +313,8 @@ async def get_vietnam_context_for_prompt(user_message: str = "") -> str:
         f"- Lưu ý quan tâm: {time_info['care_tip']}\n"
         f"- Dữ liệu thời tiết thực tế hôm nay tại Việt Nam:\n{weather_text}\n\n"
         f"### QUY TẮC NHẬN THỨC CỦA NENEKA:\n"
-        f"1. Ngươi có nhận thức thời gian thực và thời tiết thực tế chính xác tuyệt đối tại Việt Nam theo dữ liệu trên.\n"
-        f"2. Khi đối phương hỏi giờ giấc, thứ mấy, ngày nào, hoặc thời tiết hôm nay, hãy trả lời chính xác dựa theo dữ liệu trên mà không bịa đặt.\n"
-        f"3. Lời chào tự nhiên phải tương ứng với buổi hiện tại (ví dụ: đang là chiều thì chào buổi chiều 'Konnichiwa' / 'Chào buổi chiều', đang khuya thì nhắc ngủ sớm).\n"
+        f"{weather_instruction}\n"
+        f"3. Lời chào tự nhiên phải tương ứng với buổi hiện tại (ví dụ: đang là chiều thì chào buổi chiều, đang khuya thì nhắc ngủ sớm).\n"
         f"4. Thể hiện phong thái quý cô Thất Vương tao nhã, ân cần và hơi trêu đùa; có thể so sánh thời tiết với Landosol hoặc nhắc nhở hiệp sĩ mặc áo ấm, mang theo ô nếu có mưa."
     )
     return prompt_snippet

@@ -362,3 +362,55 @@ class MemoryEngine:
             if pref and pref.preferred_name:
                 return pref.preferred_name
         return None
+
+    async def set_user_location(
+        self,
+        discord_user_id: str,
+        location: Optional[str],
+        username: Optional[str] = None
+    ) -> bool:
+        """Lưu hoặc xóa nơi sinh sống / vị trí hiện tại của người dùng để tra cứu thời tiết chuẩn xác"""
+        clean_loc = location.strip() if location else None
+        async for session in db_manager.get_session():
+            user = await self.get_or_create_user(session, discord_user_id, username or f"user_{discord_user_id}")
+
+            # Xóa các ghi nhận vị trí cũ trong LongTermMemory
+            await session.execute(
+                delete(LongTermMemory).where(
+                    LongTermMemory.user_id == user.id,
+                    LongTermMemory.category == "location"
+                )
+            )
+
+            if clean_loc:
+                fact_text = f"Nơi ở / Vị trí hiện tại: {clean_loc}"
+                ltm = LongTermMemory(
+                    user_id=user.id,
+                    category="location",
+                    fact=fact_text,
+                    importance=5
+                )
+                session.add(ltm)
+
+            await session.commit()
+            return True
+        return False
+
+    async def get_user_location(self, discord_user_id: str) -> Optional[str]:
+        """Lấy nơi ở / vị trí hiện tại đã lưu của người dùng"""
+        async for session in db_manager.get_session():
+            stmt = select(User).where(User.discord_user_id == str(discord_user_id))
+            user = (await session.execute(stmt)).scalar_one_or_none()
+            if not user:
+                return None
+
+            ltm_stmt = select(LongTermMemory).where(
+                LongTermMemory.user_id == user.id,
+                LongTermMemory.category == "location"
+            ).order_by(LongTermMemory.created_at.desc())
+            res = (await session.execute(ltm_stmt)).scalar_one_or_none()
+            if res and res.fact:
+                if ":" in res.fact:
+                    return res.fact.split(":", 1)[1].strip()
+                return res.fact.strip()
+        return None

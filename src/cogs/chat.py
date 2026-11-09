@@ -16,7 +16,9 @@ from src.autonomous.proactive_engine import proactive_engine
 from src.utils.vietnam_context import (
     get_vietnam_time_info,
     get_vietnam_weather_info,
-    get_vietnam_context_for_prompt
+    get_vietnam_context_for_prompt,
+    detect_city_from_query,
+    CITIES_VN
 )
 from src.voice.song_manager import is_singing_request, create_song_embed
 from src.voice.voice_channel import voice_channel_mgr
@@ -71,7 +73,8 @@ class ChatCog(commands.Cog):
         )
 
         # Ngữ cảnh thời gian và thời tiết thực tế tại Việt Nam (UTC+7)
-        vietnam_context = await get_vietnam_context_for_prompt(user_message)
+        user_loc = await memory_engine.get_user_location(discord_user_id)
+        vietnam_context = await get_vietnam_context_for_prompt(user_message, user_location=user_loc)
 
         memory_section = ""
         if mem_ctx["relevant_facts"]:
@@ -151,10 +154,23 @@ class ChatCog(commands.Cog):
     @app_commands.describe(location="Tên thành phố (Hà Nội, Sài Gòn, Đà Nẵng, Đà Lạt, Nha Trang, Hải Phòng, Cần Thơ...)")
     async def cmd_weather(self, interaction: discord.Interaction, location: Optional[str] = None):
         await interaction.response.defer()
+        user_loc = await memory_engine.get_user_location(str(interaction.user.id))
+        target_loc = location or user_loc
+        if not target_loc:
+            await interaction.followup.send(
+                "Fufu... Cậu chưa cho ta biết cậu đang sinh sống ở thành phố nào tại Việt Nam cả.\n"
+                "Cậu có thể dùng lệnh `/location <thành_phố>` (ví dụ: `/location Sài Gòn`) để ta ghi nhớ, "
+                "hoặc hỏi kèm tên thành phố như `/weather sài gòn` nhé."
+            )
+            return
+
         time_info = get_vietnam_time_info()
-        weather_list = await get_vietnam_weather_info(location)
+        weather_list = await get_vietnam_weather_info(city_query=location, user_location=user_loc)
         if not weather_list:
-            await interaction.followup.send("Fufu... Ma lực khí tượng đang có chút nhiễu loạn, ta chưa thể đo lường thời tiết vùng này lúc này được.")
+            await interaction.followup.send(
+                f"Fufu... Ta chưa đo lường được dữ liệu thời tiết cho '{target_loc}'. "
+                "Cậu hãy thử tra cứu các tỉnh thành như Hà Nội, Sài Gòn, Đà Nẵng, Đà Lạt, Cần Thơ, Hải Phòng, Bình Dương, Đồng Nai... xem sao nhé."
+            )
             return
 
         embed = discord.Embed(
@@ -184,6 +200,42 @@ class ChatCog(commands.Cog):
         embed.add_field(name="💜 Nhận Xét Của Neneka", value=f"*{comment.strip()}*", inline=False)
         embed.set_footer(text="Open-Meteo Real-Time Weather • Seven Crowns Intelligence")
         await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="location", description="📍 Đặt hoặc kiểm tra nơi sinh sống của bạn để Neneka cập nhật thời tiết chuẩn xác")
+    @app_commands.describe(city="Tên thành phố tại Việt Nam (ví dụ: Sài Gòn, Hà Nội, Đà Nẵng, Bình Dương...) hoặc 'reset' để xóa")
+    async def cmd_location(self, interaction: discord.Interaction, city: Optional[str] = None):
+        user_id = str(interaction.user.id)
+        if not city:
+            current_loc = await memory_engine.get_user_location(user_id)
+            if current_loc:
+                await interaction.response.send_message(
+                    f"📍 Hiện tại Neneka đang ghi nhận nơi ở của {interaction.user.mention} là: **{current_loc}**.\n"
+                    "*(Dùng `/location <thành_phố>` để đổi mới hoặc `/location reset` để xóa)*"
+                )
+            else:
+                await interaction.response.send_message(
+                    f"📍 {interaction.user.mention} chưa thiết lập nơi sinh sống.\n"
+                    "Hãy dùng `/location <thành_phố>` (ví dụ: `/location Sài Gòn`) để Neneka luôn nhớ và cập nhật thời tiết chuẩn xác cho cậu nhé!"
+                )
+            return
+
+        if city.lower() in ["reset", "xóa", "xoa", "none", "clear"]:
+            await memory_engine.set_user_location(user_id, None, interaction.user.name)
+            await interaction.response.send_message("✨ Đã xóa dữ liệu nơi ở của cậu. Kể từ giờ Neneka sẽ không mặc định vị trí của cậu nữa.")
+            return
+
+        await memory_engine.set_user_location(user_id, city, interaction.user.name)
+        embed = discord.Embed(
+            title="📍 Đã Cập Nhật Vị Trí Của Bạn!",
+            description=(
+                f"✨ *nhẹ nhàng xoay quyền trượng Metamorphose, định vị dòng chảy khí tượng*\n"
+                f"Fufu... Ta đã ghi nhớ rồi. Hiện tại {interaction.user.mention} đang ở **{city}** nhé.\n"
+                f"Mỗi khi cậu hỏi về thời tiết hôm nay, ta sẽ tự khắc tra cứu thời tiết tại **{city}** cho cậu."
+            ),
+            color=0x3498db
+        )
+        embed.set_footer(text="Seven Crowns Real-Time Geo • Princess Connect! Re:Dive")
+        await interaction.response.send_message(embed=embed)
 
     # =========================================================================
     # LEGACY PREFIX COMMANDS (!n, n!)
@@ -276,14 +328,63 @@ class ChatCog(commands.Cog):
         embed.set_footer(text="Seven Crowns Real-Time Chronometer • Princess Connect! Re:Dive")
         await ctx.reply(embed=embed)
 
+    @commands.command(name="location", aliases=["vitri", "noio"])
+    async def pcmd_location(self, ctx, *, city: Optional[str] = None):
+        """Đặt hoặc kiểm tra nơi sinh sống tại Việt Nam (!n location <thành phố> / !n location reset)"""
+        user_id = str(ctx.author.id)
+        if not city:
+            current_loc = await memory_engine.get_user_location(user_id)
+            if current_loc:
+                await ctx.reply(
+                    f"📍 Hiện tại Neneka đang ghi nhận nơi ở của cậu là: **{current_loc}**.\n"
+                    "*(Dùng `!n location <thành phố>` để đổi mới hoặc `!n location reset` để xóa)*"
+                )
+            else:
+                await ctx.reply(
+                    "📍 Cậu chưa thiết lập nơi sinh sống.\n"
+                    "Hãy dùng `!n location <thành phố>` (ví dụ: `!n location Sài Gòn` hoặc nói tự nhiên *'mình đang ở Sài Gòn'*) để Neneka luôn nhớ và cập nhật thời tiết chuẩn xác nhé!"
+                )
+            return
+
+        if city.lower() in ["reset", "xóa", "xoa", "none", "clear"]:
+            await memory_engine.set_user_location(user_id, None, ctx.author.name)
+            await ctx.reply("✨ Đã xóa dữ liệu nơi ở. Kể từ giờ Neneka sẽ không tự ý mặc định vị trí của cậu nữa.")
+            return
+
+        await memory_engine.set_user_location(user_id, city, ctx.author.name)
+        embed = discord.Embed(
+            title="📍 Đã Cập Nhật Vị Trí Của Bạn!",
+            description=(
+                f"✨ *nhẹ nhàng xoay quyền trượng Metamorphose, định vị dòng chảy khí tượng*\n"
+                f"Fufu... Ta đã ghi nhớ rồi. Hiện tại cậu đang ở **{city}** nhé.\n"
+                f"Mỗi khi cậu hỏi về thời tiết hôm nay, ta sẽ tự khắc đo lường khí hậu tại **{city}** cho cậu."
+            ),
+            color=0x3498db
+        )
+        embed.set_footer(text="Seven Crowns Real-Time Geo • Princess Connect! Re:Dive")
+        await ctx.reply(embed=embed)
+
     @commands.command(name="weather")
     async def pcmd_weather(self, ctx, *, location: Optional[str] = None):
         """Tra cứu thời tiết thực tế hôm nay tại Việt Nam"""
         async with ctx.typing():
+            user_loc = await memory_engine.get_user_location(str(ctx.author.id))
+            target_loc = location or user_loc
+            if not target_loc:
+                await ctx.reply(
+                    "Fufu... Cậu chưa cho ta biết cậu đang sinh sống ở thành phố nào tại Việt Nam cả.\n"
+                    "Cậu có thể dùng lệnh `!n location <thành phố>` (hoặc nói tự nhiên *'mình ở Sài Gòn'*), "
+                    "hoặc gõ kèm tên nơi cần xem như `!n weather đà lạt` nhé."
+                )
+                return
+
             time_info = get_vietnam_time_info()
-            weather_list = await get_vietnam_weather_info(location)
+            weather_list = await get_vietnam_weather_info(city_query=location, user_location=user_loc)
             if not weather_list:
-                await ctx.reply("Fufu... Ma lực khí tượng đang có chút nhiễu loạn, ta chưa thể đo lường thời tiết vùng này lúc này được.")
+                await ctx.reply(
+                    f"Fufu... Ta chưa đo lường được dữ liệu thời tiết cho '{target_loc}'. "
+                    "Cậu hãy thử tra cứu các tỉnh thành như Hà Nội, Sài Gòn, Đà Nẵng, Đà Lạt, Cần Thơ, Hải Phòng, Bình Dương, Đồng Nai... xem sao nhé."
+                )
                 return
 
             embed = discord.Embed(
@@ -324,7 +425,8 @@ class ChatCog(commands.Cog):
         )
         embed.add_field(name="`/chat <lời nhắn>` hoặc `!n chat`", value="Trò chuyện trực tiếp cùng Neneka.", inline=False)
         embed.add_field(name="`/time` hoặc `!n time`", value="Xem giờ, thứ, ngày tháng và buổi hiện tại tại Việt Nam.", inline=False)
-        embed.add_field(name="`/weather [nơi]` hoặc `!n weather [nơi]`", value="Tra cứu thời tiết thực tế tại Việt Nam (Hà Nội, Sài Gòn, Đà Nẵng, Đà Lạt...).", inline=False)
+        embed.add_field(name="`/weather [nơi]` hoặc `!n weather [nơi]`", value="Tra cứu thời tiết thực tế tại Việt Nam (theo nơi ở của bạn hoặc thành phố chỉ định).", inline=False)
+        embed.add_field(name="`/location [nơi]` hoặc `!n location [nơi]`", value="Đặt nơi ở để Neneka cập nhật thời tiết chuẩn xác mà không cần hỏi lại.", inline=False)
         embed.add_field(name="`/neneka`", value="Xem hồ sơ nhân vật Thất Vương.", inline=False)
         embed.add_field(name="`/costume [tên]`", value="Xem hoặc chuyển đổi trang phục (original, new_year, alpha).", inline=False)
         embed.add_field(name="`/bond` hoặc `!n status`", value="Kiểm tra cấp độ gắn kết và điểm hảo cảm.", inline=False)
@@ -416,6 +518,31 @@ class ChatCog(commands.Cog):
                     color=0x9b59b6
                 )
                 embed.set_footer(text="Seven Crowns Identity Registry • Princess Connect! Re:Dive")
+                await message.reply(embed=embed)
+                return
+
+        # 5.5 Kiểm tra nếu người dùng nói về nơi ở tự nhiên trong đoạn chat
+        loc_match = re.search(
+            r'(?:tôi|mình|ta|anh|em|nhà tôi|nhà mình|hiện tại)\s+(?:đang\s+)?(?:ở|sống tại|sinh sống tại|ở tại)\s+([^\n.,!?;]+)',
+            clean_content,
+            re.IGNORECASE
+        )
+        if loc_match:
+            candidate_city = loc_match.group(1).strip().strip("'\"")
+            detected_city_key = detect_city_from_query(candidate_city)
+            if detected_city_key and detected_city_key in CITIES_VN:
+                resolved_name = CITIES_VN[detected_city_key][2]
+                await memory_engine.set_user_location(str(message.author.id), resolved_name, message.author.name)
+                embed = discord.Embed(
+                    title="📍 Đã Ghi Nhận Nơi Ở Của Cậu!",
+                    description=(
+                        f"✨ *mỉm cười quan sát, đánh dấu vào tấm bản đồ không gian của Thất Vương*\n"
+                        f"Fufu... Ta đã ghi nhận rồi. Hiện tại {message.author.mention} đang ở **{resolved_name}** đúng không?\n"
+                        f"Từ giờ khi cậu hỏi thời tiết hôm nay, ta sẽ tự khắc tra cứu chính xác cho vùng đất này nhé."
+                    ),
+                    color=0x3498db
+                )
+                embed.set_footer(text="Seven Crowns Real-Time Geo • Princess Connect! Re:Dive")
                 await message.reply(embed=embed)
                 return
 
