@@ -27,6 +27,7 @@ COGS = [
     "src.cogs.bond",
     "src.cogs.memory",
     "src.cogs.voice",
+    "src.cogs.entertainment",
     "src.cogs.admin",
     "src.cogs.chat"
 ]

@@ -433,6 +433,9 @@ class ChatCog(commands.Cog):
         embed.add_field(name="`/story [từ khóa]`", value="Tra cứu cốt truyện Canon và ký ức lưu trữ.", inline=False)
         embed.add_field(name="`/memory` & `/forget`", value="Quản lý và minh bạch ký ức dài hạn.", inline=False)
         embed.add_field(name="`!n nickname [@user] <tên>` hoặc `/nickname`", value="Đặt biệt danh để Neneka gọi bạn hoặc người khác.", inline=False)
+        embed.add_field(name="`!n fortune` hoặc `/fortune` / `!n daily`", value="Gieo quẻ vận mệnh mỗi ngày, bói vận thế & nhận điểm gắn kết.", inline=False)
+        embed.add_field(name="`!n mirror` hoặc `/mirror`", value="Mini-game Gương Ảo Ảnh: Thử tài tinh mắt đoán bản thể thật của Neneka qua nút bấm.", inline=False)
+        embed.add_field(name="`!n sleep [chủ đề]` hoặc `/sleep`", value="Chế độ ru ngủ ban đêm: Neneka kể chuyện và thì thầm lời ru tiếng Nhật êm đềm.", inline=False)
         embed.add_field(name="`!n speak <câu>` hoặc `/speak`", value="Yêu cầu Neneka cất giọng tiếng Nhật (Fish Audio Metamorph Regnant).", inline=False)
         embed.add_field(name="`!n sing [chủ đề]` hoặc `/sing`", value="Yêu cầu Neneka cất giọng hát bài ngẫu nhiên theo phong cách Nhật Bản.", inline=False)
         embed.add_field(name="`!n join` & `!n leave`", value="Mời Neneka vào hoặc rời phòng thoại (Voice Channel).", inline=False)
@@ -564,7 +567,38 @@ class ChatCog(commands.Cog):
                         await message.reply(embed=embed, file=discord_file)
                         return
 
-        # 6. Tạo phản hồi hội thoại thông thường và gửi
+        # 7. Kiểm tra nếu người dùng yêu cầu gieo quẻ vận mệnh tự nhiên
+        if any(term in clean_content.lower() for term in ["gieo quẻ", "bói quẻ", "xem vận mệnh", "bói cho mình", "bói hôm nay", "quẻ hôm nay"]):
+            ent_cog = self.bot.get_cog("EntertainmentCog")
+            if ent_cog:
+                await ent_cog._handle_fortune(message.author, message.reply)
+                return
+
+        # 8. Kiểm tra nếu người dùng yêu cầu ru ngủ tự nhiên
+        if any(term in clean_content.lower() for term in ["ru ngủ", "ru mình ngủ", "hát ru", "chúc ngủ ngon", "buồn ngủ quá", "ngủ đây", "đi ngủ đây"]):
+            async with message.channel.typing():
+                from src.voice.sleep_manager import sleep_manager
+                embed, audio_file, note = await sleep_manager.execute_sleep(message.author, theme=clean_content, guild=message.guild)
+                if note:
+                    embed.description = f"{note}\n\n{embed.description}"
+                if audio_file:
+                    discord_file = discord.File(audio_file, filename="neneka_lullaby.mp3")
+                    await message.reply(embed=embed, file=discord_file)
+                else:
+                    await message.reply(embed=embed)
+                return
+
+        # 9. Kiểm tra nếu người dùng muốn chơi gương ảo ảnh tự nhiên
+        if any(term in clean_content.lower() for term in ["chơi gương ảo ảnh", "chơi phân thân", "đố vui phân thân", "chơi game cùng neneka"]):
+            from src.entertainment.mirror_game import start_mirror_game
+            embed, view, err = start_mirror_game(str(message.author.id), bond_engine)
+            if err:
+                await message.reply(err)
+            else:
+                await message.reply(embed=embed, view=view)
+            return
+
+        # 10. Tạo phản hồi hội thoại thông thường và gửi
         async with message.channel.typing():
             reply_text = await self._generate_neneka_reply(
                 user_message=clean_content,
