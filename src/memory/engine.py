@@ -305,3 +305,60 @@ class MemoryEngine:
 
             await session.commit()
             return True
+
+    async def set_preferred_name(
+        self,
+        discord_user_id: str,
+        nickname: Optional[str],
+        username: Optional[str] = None
+    ) -> bool:
+        """Đặt biệt danh / tên gọi thân mật cho người dùng trong cơ sở dữ liệu"""
+        clean_nick = nickname.strip() if nickname else None
+        async for session in db_manager.get_session():
+            user = await self.get_or_create_user(session, discord_user_id, username or f"user_{discord_user_id}")
+            pref_stmt = select(UserPreference).where(UserPreference.user_id == user.id)
+            pref_res = await session.execute(pref_stmt)
+            pref = pref_res.scalar_one_or_none()
+            if not pref:
+                pref = UserPreference(user_id=user.id, preferred_name=clean_nick)
+                session.add(pref)
+            else:
+                pref.preferred_name = clean_nick
+
+            # Cập nhật ký ức dài hạn để Neneka luôn nhớ
+            await session.execute(
+                delete(LongTermMemory).where(
+                    LongTermMemory.user_id == user.id,
+                    LongTermMemory.category == "nickname"
+                )
+            )
+
+            if clean_nick:
+                fact_text = f"Tên gọi / Biệt danh thân mật được chỉ định: '{clean_nick}'."
+                ltm = LongTermMemory(
+                    user_id=user.id,
+                    category="nickname",
+                    fact=fact_text,
+                    importance=5
+                )
+                session.add(ltm)
+
+            await session.commit()
+            return True
+        return False
+
+    async def get_preferred_name(self, discord_user_id: str) -> Optional[str]:
+        """Lấy biệt danh hiện tại của người dùng"""
+        if str(discord_user_id) == str(settings.CREATOR_USER_ID):
+            return "Sheffy-sama"
+
+        async for session in db_manager.get_session():
+            stmt = select(User).where(User.discord_user_id == str(discord_user_id))
+            user = (await session.execute(stmt)).scalar_one_or_none()
+            if not user:
+                return None
+            pref_stmt = select(UserPreference).where(UserPreference.user_id == user.id)
+            pref = (await session.execute(pref_stmt)).scalar_one_or_none()
+            if pref and pref.preferred_name:
+                return pref.preferred_name
+        return None

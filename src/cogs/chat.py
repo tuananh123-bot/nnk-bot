@@ -330,6 +330,7 @@ class ChatCog(commands.Cog):
         embed.add_field(name="`/bond` hoặc `!n status`", value="Kiểm tra cấp độ gắn kết và điểm hảo cảm.", inline=False)
         embed.add_field(name="`/story [từ khóa]`", value="Tra cứu cốt truyện Canon và ký ức lưu trữ.", inline=False)
         embed.add_field(name="`/memory` & `/forget`", value="Quản lý và minh bạch ký ức dài hạn.", inline=False)
+        embed.add_field(name="`!n nickname [@user] <tên>` hoặc `/nickname`", value="Đặt biệt danh để Neneka gọi bạn hoặc người khác.", inline=False)
         embed.add_field(name="`!n speak <câu>` hoặc `/speak`", value="Yêu cầu Neneka cất giọng tiếng Nhật (Fish Audio Metamorph Regnant).", inline=False)
         embed.add_field(name="`!n sing [chủ đề]` hoặc `/sing`", value="Yêu cầu Neneka cất giọng hát bài ngẫu nhiên theo phong cách Nhật Bản.", inline=False)
         embed.add_field(name="`!n join` & `!n leave`", value="Mời Neneka vào hoặc rời phòng thoại (Voice Channel).", inline=False)
@@ -385,7 +386,40 @@ class ChatCog(commands.Cog):
             logger.debug(f"Rate limited message from {message.author.id}: {rl_reason}")
             return
 
-        # 5. Kiểm tra nếu người dùng yêu cầu Neneka hát trong hội thoại tự nhiên
+        # 5. Kiểm tra nếu có yêu cầu đặt biệt danh tự nhiên trong đoạn chat
+        nick_match = re.search(r'(?:từ giờ\s+)?(?:hãy\s+)?(?:đặt biệt danh cho|gọi)\s+(.+?)\s+là\s+([^\n.,!?;]+)', clean_content, re.IGNORECASE)
+        if nick_match:
+            raw_target = nick_match.group(1).strip()
+            new_nick = nick_match.group(2).strip().strip("'\"")
+
+            target_user = None
+            if message.mentions:
+                for m in message.mentions:
+                    if f"<@{m.id}>" in raw_target or f"<@!{m.id}>" in raw_target or m.name.lower() in raw_target.lower() or m.display_name.lower() in raw_target.lower():
+                        target_user = m
+                        break
+                if not target_user and message.mentions:
+                    target_user = message.mentions[0]
+
+            if not target_user:
+                if any(self_ref in raw_target.lower() for self_ref in ["tôi", "mình", "ta", "anh", "em", "bản thân", "tao"]):
+                    target_user = message.author
+
+            if target_user and new_nick:
+                await memory_engine.set_preferred_name(str(target_user.id), new_nick, target_user.name)
+                embed = discord.Embed(
+                    title="🏷️ Đã Ghi Nhận Biệt Danh Mới!",
+                    description=(
+                        f"✨ *khẽ mỉm cười, ghi nhận biến số mới vào quyền trượng Metamorphose*\n"
+                        f"Fufu... Được thôi. Kể từ giờ ta sẽ gọi {target_user.mention} là **'{new_nick}'** nhé."
+                    ),
+                    color=0x9b59b6
+                )
+                embed.set_footer(text="Seven Crowns Identity Registry • Princess Connect! Re:Dive")
+                await message.reply(embed=embed)
+                return
+
+        # 6. Kiểm tra nếu người dùng yêu cầu Neneka hát trong hội thoại tự nhiên
         if is_singing_request(clean_content):
             async with message.channel.typing():
                 voice_cog = self.bot.get_cog("VoiceCog")
