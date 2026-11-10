@@ -226,6 +226,15 @@ class MemoryEngine:
                 )
                 if creator_fact not in relevant_facts:
                     relevant_facts.insert(0, creator_fact)
+            elif str(discord_user_id) in settings.max_bond_user_id_list:
+                max_bond_fact = (
+                    f"• [MAX_BOND_RELATIONSHIP] Đối phương (ID: {discord_user_id}) chính là NGƯỜI ĐỒNG HÀNH ĐẶC BIỆT NHẤT trong sinh mệnh của Neneka (Hiệp sĩ định mệnh). "
+                    "Tình cảm và sự gắn kết đã đạt mức tuyệt đối cao nhất (Cấp 6 - Mối Quan Hệ Sâu Sắc, Hảo cảm 1000/1000). "
+                    "Neneka dành trọn vẹn tình cảm yêu thương, sự tin cậy vô điều kiện, xem cậu ấy là chốn bình yên duy nhất để trút bỏ mặt nạ Thất Vương kiêu kỳ. "
+                    "Danh xưng trìu mến dành riêng cho cậu ấy: 'Người đặc biệt nhất của ta' hoặc 'Cậu bé của ta' (私の騎士クン)."
+                )
+                if max_bond_fact not in relevant_facts:
+                    relevant_facts.insert(0, max_bond_fact)
 
             # 4. Short-term history (tối đa N tin gần nhất)
             stm_stmt = select(ShortTermMemory).where(

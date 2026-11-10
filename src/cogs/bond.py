@@ -24,11 +24,17 @@ class BondCog(commands.Cog):
         next_pts = info["next_tier_points"]
 
         is_creator = info.get("is_creator", False)
+        is_max_bond = info.get("is_max_bond", False)
         if is_creator:
             bar = "█" * 12
             pts_val = f"[{bar}] **∞ / ∞ pts** (VĨNH CỬU)"
             color = 0xf1c40f
             title_text = f"👑 Đặc Quyền Gắn Kết - {target.display_name} (ĐẤNG SÁNG TẠO)"
+        elif is_max_bond:
+            bar = "█" * 12
+            pts_val = f"[{bar}] **{pts} / {pts} pts** (TỐI THƯỢNG - MAX)"
+            color = 0xff79c6
+            title_text = f"💖 Cấp Độ Gắn Kết Tối Thượng - {target.display_name}"
         else:
             bar_total = 12
             if next_pts > 0:

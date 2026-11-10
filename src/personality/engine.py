@@ -7,7 +7,8 @@ from src.personality.prompts import (
     NENEKA_VIETNAMESE_STYLE_PROMPT,
     NENEKA_JAPANESE_STYLE_PROMPT,
     NENEKA_CANON_FACTS,
-    NENEKA_CREATOR_DIRECTIVE
+    NENEKA_CREATOR_DIRECTIVE,
+    NENEKA_MAX_BOND_DIRECTIVE
 )
 
 @dataclass
@@ -61,7 +62,8 @@ class PersonalityEngine:
         irritation_delta: int = 0,
         amusement_delta: int = 0,
         new_emotion: Optional[str] = None,
-        is_creator: bool = False
+        is_creator: bool = False,
+        is_max_bond: bool = False
     ):
         """Cập nhật các biến tính cách theo biến cố tương tác hợp lý"""
         lower = user_message.lower()
@@ -79,6 +81,16 @@ class PersonalityEngine:
                 self.state.emotional_state = "affectionate_warmth"
             else:
                 self.state.emotional_state = new_emotion or "deep_reverence"
+            self.state.clamp()
+            return
+
+        # Nếu là Người dùng đạt cấp tình cảm tối đa (Max Bond / Deep Relationship)
+        if is_max_bond:
+            self.state.trust = 100
+            self.state.affection = 1000
+            self.state.irritation = 0
+            self.state.amusement = min(100, self.state.amusement + 15)
+            self.state.emotional_state = new_emotion or "affectionate_warmth"
             self.state.clamp()
             return
 
@@ -119,12 +131,13 @@ class PersonalityEngine:
         self,
         user_language: str = "vi",
         user_name: str = "Hiệp sĩ",
-        is_creator: bool = False
+        is_creator: bool = False,
+        is_max_bond: bool = False
     ) -> str:
         """Tổng hợp System Prompt đa tầng chuẩn mực cho Neneka"""
         st = self.state
 
-        if is_creator:
+        if is_creator or is_max_bond:
             st.trust = 100
             st.affection = 1000
             st.irritation = 0
@@ -140,19 +153,21 @@ class PersonalityEngine:
             style_section = NENEKA_VIETNAMESE_STYLE_PROMPT
 
         creator_section = f"\n\n{NENEKA_CREATOR_DIRECTIVE}" if is_creator else ""
+        max_bond_section = f"\n\n{NENEKA_MAX_BOND_DIRECTIVE}" if (is_max_bond and not is_creator) else ""
 
+        user_tag = '[👑 ĐẤNG SÁNG TẠO - CREATOR / MASTER]' if is_creator else ('[💖 NGƯỜI ĐỒNG HÀNH ĐẶC BIỆT NHẤT - CẤP 6 TỐI ĐA]' if is_max_bond else '')
         state_summary = (
             f"### NENEKA REAL-TIME PERSONALITY MATRIX:\n"
             f"- Confidence: {st.confidence}/100 | Curiosity: {st.curiosity}/100\n"
             f"- Affection: {st.affection}/1000 | Trust: {st.trust}/100\n"
             f"- Amusement: {st.amusement}/100 | Irritation: {st.irritation}/100\n"
             f"- Seriousness: {st.seriousness}/100 | Current Emotion: {st.emotional_state}\n"
-            f"- Current Interlocutor: {user_name} {'[👑 ĐẤNG SÁNG TẠO - CREATOR / MASTER]' if is_creator else ''}"
+            f"- Current Interlocutor: {user_name} {user_tag}"
         )
 
         return f"""{NENEKA_CANON_BASE_PROMPT}
 
-{NENEKA_CANON_FACTS}{creator_section}
+{NENEKA_CANON_FACTS}{creator_section}{max_bond_section}
 
 {style_section}
 

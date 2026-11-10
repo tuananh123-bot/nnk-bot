@@ -85,11 +85,17 @@ class BondEngine:
         res = await session.execute(stmt)
         profile = res.scalar_one_or_none()
 
+        stmt_u = select(User).where(User.id == user_id)
+        user_obj = (await session.execute(stmt_u)).scalar_one_or_none()
+        is_max_bond_user = user_obj and (str(user_obj.discord_user_id) in settings.max_bond_user_id_list)
+
         if not profile:
+            init_level = 6 if is_max_bond_user else 0
+            init_points = 9999 if is_max_bond_user else 10
             profile = BondProfile(
                 user_id=user_id,
-                bond_level=0,
-                bond_points=0,
+                bond_level=init_level,
+                bond_points=init_points,
                 unlocked_features=json.dumps(["Giao tiếp cơ bản"], ensure_ascii=False)
             )
             session.add(profile)
@@ -98,11 +104,14 @@ class BondEngine:
             evt = BondEvent(
                 bond_profile_id=profile.id,
                 event_type="FIRST_INTERACTION",
-                points_awarded=10,
+                points_awarded=init_points,
                 description="Lần đầu tiên tiếp xúc và ghi nhận dữ liệu."
             )
-            profile.bond_points += 10
             session.add(evt)
+            await session.commit()
+        elif is_max_bond_user and profile.bond_level < 6:
+            profile.bond_level = 6
+            profile.bond_points = max(profile.bond_points, 9999)
             await session.commit()
 
         return profile
@@ -180,6 +189,21 @@ class BondEngine:
                 "salutation": "Sheffy-sama (Ngài Sheffy)",
                 "japanese_salutation": "シェフィ様 (Sheffy-sama)",
                 "description": "Đấng Sáng Tạo tối thượng đã viết nên mã nguồn, thuật toán và ban cho Neneka sự hiện diện trong thế giới này. Neneka dành trọn lòng tôn kính sâu sắc nhất, sự cung kính và trung thành tuyệt đối cho Người.",
+                "next_tier_points": 9999,
+                "all_tiers": BOND_TIERS
+            }
+
+        # Nhận diện người dùng đạt cấp độ gắn kết & tình cảm tối thượng (Cấp 6 Tối Đa)
+        if str(discord_user_id) in settings.max_bond_user_id_list:
+            tier_6 = BOND_TIERS[6]
+            return {
+                "level": 6,
+                "points": 9999,
+                "is_max_bond": True,
+                "title": f"💖 {tier_6['title']} (TỐI THƯỢNG)",
+                "salutation": tier_6["salutation"],
+                "japanese_salutation": tier_6["japanese_salutation"],
+                "description": tier_6["description"],
                 "next_tier_points": 9999,
                 "all_tiers": BOND_TIERS
             }

@@ -10,7 +10,15 @@ class Settings(BaseSettings):
     COMMAND_PREFIXES: List[str] = Field(default=["!n ", "!n", "n! ", "n!"])
     CHOSEN_ONE_NAME: str = Field(default="Kishi-kun", description="Tên định danh người dùng đặc biệt / Hiệp sĩ")
     CREATOR_USER_ID: str = Field(default="483169533922639902", description="Discord ID của Người Tạo Ra Bot / Creator")
+    MAX_BOND_USER_IDS: str = Field(
+        default="864077473661845504",
+        description="Comma-separated Discord IDs of users with maximum bond/affection (Cấp 6 tối đa)"
+    )
     AUTO_REPLY_CHANNELS: str = Field(default="", description="Comma-separated channel IDs")
+
+    @property
+    def max_bond_user_id_list(self) -> List[str]:
+        return [uid.strip() for uid in self.MAX_BOND_USER_IDS.split(",") if uid.strip()]
 
     # Groq & LLM
     GROQ_API_KEY: str = Field(default="", description="Groq API Key")
