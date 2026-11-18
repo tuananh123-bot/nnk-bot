@@ -37,6 +37,17 @@ class Settings(BaseSettings):
     # AI Horde (Image Generation / Distributed Cluster)
     AI_HORDE_API_KEY: str = Field(default="", description="AI Horde API Key (https://aihorde.net/)")
 
+    # Uncensored AI (Image Generation - seedream-v5)
+    UNCENSORED_API_KEY: str = Field(default="", description="Uncensored AI API Key (uai_sk_...)")
+    UNCENSORED_IMAGE_BASE_URL: str = Field(
+        default="https://api.uncensored.com/api/v1",
+        description="Base URL cho Uncensored AI Images API"
+    )
+    UNCENSORED_IMAGE_MODEL: str = Field(
+        default="seedream-v5",
+        description="Model mặc định cho Uncensored AI Image Gen (ví dụ: seedream-v5)"
+    )
+
     # NSFW mode (per-guild / per-channel được lưu runtime; flag global này bật/tắt toàn bộ tính năng)
     NSFW_ENABLED: bool = Field(default=False, description="Cho phép nội dung 18+ toàn cục (True/False)")
     NSFW_CHANNEL_IDS: str = Field(default="", description="Comma-separated channel IDs được phép NSFW")

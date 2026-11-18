@@ -1,6 +1,9 @@
 # src/cogs/image_gen.py
 """
-Cog xử lý tính năng tạo ảnh AI (Text-to-Image) thông qua AI Horde Distributed Cluster.
+Cog xử lý tính năng tạo ảnh AI (Text-to-Image).
+Hỗ trợ đa nhà cung cấp:
+1. Uncensored AI API (https://api.uncensored.com) - Model: seedream-v5
+2. AI Horde Distributed Cluster (https://aihorde.net) - SDXL / Pony / Anime
 Hỗ trợ cả Slash command (/imagine, /draw) và tiền tố (!n draw, !n imagine).
 """
 
@@ -12,6 +15,7 @@ from discord.ext import commands
 
 from src.config import settings
 from src.llm.horde_client import horde_client
+from src.llm.uncensored_image_client import uncensored_image_client
 from src.cogs.chat import _nsfw_runtime_channels
 
 logger = logging.getLogger("Neneka.ImageGen")
@@ -36,11 +40,12 @@ class ImageGenCog(commands.Cog):
             return True
         return False
 
-    @app_commands.command(name="imagine", description="🎨 Vẽ tranh và tạo ảnh AI qua AI Horde (Stable Diffusion/SDXL/Anime)")
+    @app_commands.command(name="imagine", description="🎨 Vẽ tranh và tạo ảnh AI (Uncensored AI seedream-v5 / AI Horde)")
     @app_commands.describe(
         prompt="Mô tả bức tranh bạn muốn Neneka phác họa (tiếng Anh hoặc tiếng Việt)",
         orientation="Định dạng khung hình: portrait (dọc), landscape (ngang), square (vuông)",
-        style="Phong cách: anime (mặc định), realistic (chân thực), cinematic (điện ảnh)"
+        style="Phong cách: anime (mặc định), realistic (chân thực), cinematic (điện ảnh)",
+        provider="Nhà cung cấp: auto (tự động), uncensored (Uncensored AI), horde (AI Horde)"
     )
     @app_commands.choices(
         orientation=[
@@ -52,6 +57,11 @@ class ImageGenCog(commands.Cog):
             app_commands.Choice(name="🌸 Anime Nghệ Thuật (Mặc định)", value="anime"),
             app_commands.Choice(name="📸 Chân Thực / Photorealistic", value="realistic"),
             app_commands.Choice(name="🎬 Điện Ảnh / Cinematic Warm", value="cinematic"),
+        ],
+        provider=[
+            app_commands.Choice(name="✨ Tự Động (Ưu tiên Uncensored AI -> AI Horde)", value="auto"),
+            app_commands.Choice(name="🔞 Uncensored AI (seedream-v5)", value="uncensored"),
+            app_commands.Choice(name="🌸 AI Horde Cluster (Anime / SDXL / Pony)", value="horde"),
         ]
     )
     async def cmd_imagine_slash(
@@ -60,6 +70,7 @@ class ImageGenCog(commands.Cog):
         prompt: str,
         orientation: Optional[str] = "portrait",
         style: Optional[str] = "anime",
+        provider: Optional[str] = "auto",
     ):
         await interaction.response.defer(thinking=True)
         await self._process_image_generation(
@@ -67,8 +78,9 @@ class ImageGenCog(commands.Cog):
             author=interaction.user,
             channel=interaction.channel,
             prompt=prompt,
-            orientation=orientation,
-            style=style,
+            orientation=orientation or "portrait",
+            style=style or "anime",
+            provider=provider or "auto",
         )
 
     @app_commands.command(name="draw", description="🖌️ Phác họa nhanh một bức tranh theo yêu cầu bằng ma lực Metamorphose")
@@ -82,6 +94,7 @@ class ImageGenCog(commands.Cog):
             prompt=prompt,
             orientation="portrait",
             style="anime",
+            provider="auto",
         )
 
     @commands.command(name="draw", aliases=["imagine", "paint", "art"])
@@ -101,6 +114,7 @@ class ImageGenCog(commands.Cog):
                 prompt=prompt,
                 orientation="portrait",
                 style="anime",
+                provider="auto",
             )
 
     async def _process_image_generation(
@@ -111,11 +125,15 @@ class ImageGenCog(commands.Cog):
         prompt: str,
         orientation: str = "portrait",
         style: str = "anime",
+        provider: str = "auto",
     ):
-        if not horde_client.is_available():
+        has_uncensored = uncensored_image_client.is_available()
+        has_horde = horde_client.is_available()
+
+        if not has_uncensored and not has_horde:
             msg = (
-                "⚠️ *AI_HORDE_API_KEY chưa được cấu hình hoặc không hợp lệ.* "
-                "Vui lòng kiểm tra lại cấu hình trong file `.env`."
+                "⚠️ *Chưa có API Key tạo ảnh nào được cấu hình.* "
+                "Vui lòng thiết lập `UNCENSORED_API_KEY` hoặc `AI_HORDE_API_KEY` trong file `.env`."
             )
             if hasattr(reply_target, "send"):
                 await reply_target.send(msg)
@@ -142,19 +160,66 @@ class ImageGenCog(commands.Cog):
 
         is_nsfw = self._is_channel_nsfw(channel)
 
-        try:
-            result = await horde_client.generate_image(
-                prompt=enhanced_prompt,
-                width=width,
-                height=height,
-                is_nsfw=is_nsfw,
-                timeout_seconds=120,
-            )
+        result = None
+        used_provider_name = ""
+        fallback_happened = False
+        error_reasons = []
 
-            img_url = result.get("img_url")
-            if not img_url:
-                raise RuntimeError("Không nhận được URL ảnh từ AI Horde worker.")
+        # 1. Thử Uncensored AI (nếu được chọn hoặc ở chế độ auto)
+        if has_uncensored and provider in ("auto", "uncensored"):
+            try:
+                result = await uncensored_image_client.generate_image(
+                    prompt=enhanced_prompt,
+                    model=settings.UNCENSORED_IMAGE_MODEL or "seedream-v5",
+                    timeout_seconds=90,
+                )
+                used_provider_name = f"Uncensored AI ({result.get('model', 'seedream-v5')})"
+            except Exception as e:
+                err_str = str(e)
+                logger.warning(f"Uncensored AI image gen thất bại: {err_str}")
+                error_reasons.append(f"Uncensored AI: {err_str}")
+                if provider == "auto" and has_horde:
+                    fallback_happened = True
+                    logger.info("Đang tự động fallback sang AI Horde Cluster...")
+                elif provider == "uncensored":
+                    # Người dùng chỉ định uncensored mà lỗi thì không fallback ngầm trừ khi cần
+                    err_msg = f"❌ *Uncensored AI không thể hoàn thành yêu cầu:* `{err_str}`"
+                    if "credit" in err_str.lower():
+                        err_msg += "\n💡 *Gợi ý:* Tài khoản Uncensored AI hiện chưa có đủ credit. Bạn có thể dùng `/imagine provider:horde` hoặc `!n draw` để dùng cluster AI Horde miễn phí!"
+                    if hasattr(reply_target, "send"):
+                        await reply_target.send(err_msg)
+                    else:
+                        await reply_target.reply(err_msg)
+                    return
 
+        # 2. Thử AI Horde (nếu result chưa có và được phép dùng)
+        if not result and has_horde and provider in ("auto", "horde"):
+            try:
+                result = await horde_client.generate_image(
+                    prompt=enhanced_prompt,
+                    width=width,
+                    height=height,
+                    is_nsfw=is_nsfw,
+                    timeout_seconds=120,
+                )
+                used_provider_name = f"AI Horde ({result.get('model', 'Horde Diffusion')})"
+            except TimeoutError:
+                err_msg = (
+                    "*khẽ đặt tách trà xuống, ánh mắt có chút tiếc nuối* Fufu... Các thợ vẽ phân tán trên mạng lưới AI Horde "
+                    "đang bận rộn xử lý hàng đợi quá đông nên lượt vẽ này bị quá hạn. Cậu chờ một chút rồi thử lại xem sao nhé?"
+                )
+                if hasattr(reply_target, "send"):
+                    await reply_target.send(err_msg)
+                else:
+                    await reply_target.reply(err_msg)
+                return
+            except Exception as e:
+                logger.error(f"Lỗi khi tạo ảnh qua AI Horde: {e}")
+                error_reasons.append(f"AI Horde: {e}")
+
+        # 3. Kết quả thành công
+        if result and result.get("img_url"):
+            img_url = result["img_url"]
             embed = discord.Embed(
                 title="✨ Ma Lực Thực Tại • Phác Họa Hoàn Tất",
                 description=f"*{author.mention}, ảo ảnh mà cậu mong ước đã được dệt thành hình:*\n> **Prompt:** {prompt}",
@@ -162,33 +227,28 @@ class ImageGenCog(commands.Cog):
             )
             embed.set_image(url=img_url)
             embed.add_field(name="📐 Kích Thước", value=f"`{width}x{height}` ({orientation})", inline=True)
-            embed.add_field(name="🎨 Worker Model", value=f"`{result.get('model', 'Horde Diffusion')}`", inline=True)
+            embed.add_field(name="🎨 Worker / Model", value=f"`{result.get('model', 'AI Model')}`", inline=True)
             if result.get("seed"):
                 embed.add_field(name="🌱 Seed", value=f"`{result.get('seed')}`", inline=True)
 
-            embed.set_footer(text="Seven Crowns Metamorphose Art • Powered by AI Horde Cluster")
+            footer_text = f"Seven Crowns Metamorphose Art • Powered by {used_provider_name}"
+            if fallback_happened:
+                footer_text += " (Đã chuyển tiếp từ Uncensored AI do thiếu credit)"
+            embed.set_footer(text=footer_text)
 
             if hasattr(reply_target, "send"):
                 await reply_target.send(embed=embed)
             else:
                 await reply_target.reply(embed=embed)
+            return
 
-        except TimeoutError:
-            err_msg = (
-                "*khẽ đặt tách trà xuống, ánh mắt có chút tiếc nuối* Fufu... Các thợ vẽ phân tán trên mạng lưới AI Horde "
-                "đang bận rộn xử lý hàng đợi quá đông nên lượt vẽ này bị quá hạn. Cậu chờ một chút rồi thử lại xem sao nhé?"
-            )
-            if hasattr(reply_target, "send"):
-                await reply_target.send(err_msg)
-            else:
-                await reply_target.reply(err_msg)
-        except Exception as e:
-            logger.error(f"Lỗi khi tạo ảnh qua AI Horde: {e}")
-            err_msg = f"❌ *Ma lực bị phân tán khi tạo ảnh:* `{e}`"
-            if hasattr(reply_target, "send"):
-                await reply_target.send(err_msg)
-            else:
-                await reply_target.reply(err_msg)
+        # 4. Cả hai provider đều thất bại
+        joined_errors = " | ".join(error_reasons) if error_reasons else "Không nhận được phản hồi hợp lệ."
+        err_msg = f"❌ *Ma lực bị phân tán khi tạo ảnh:* `{joined_errors}`"
+        if hasattr(reply_target, "send"):
+            await reply_target.send(err_msg)
+        else:
+            await reply_target.reply(err_msg)
 
 
 async def setup(bot: commands.Bot):
