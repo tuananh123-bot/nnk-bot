@@ -1,82 +1,72 @@
-# tests/test_openrouter.py
+# tests/test_venice.py
 """
-Tests cho OpenRouter API client và NSFW mode integration.
+Tests cho Venice AI API client và NSFW mode integration.
 """
 import os
 import sys
-import asyncio
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
-class TestOpenRouterClient:
-    """Unit tests cho OpenRouterClient."""
+class TestVeniceClient:
+    """Unit tests cho VeniceClient."""
 
     def test_client_instantiation(self):
-        """OpenRouterClient có thể được khởi tạo với API key."""
-        from src.llm.openrouter_client import OpenRouterClient
-        client = OpenRouterClient(api_key="sk-or-test-key")
-        assert client.api_key == "sk-or-test-key"
-        assert client.model == OpenRouterClient.DEFAULT_MODEL
+        """VeniceClient có thể được khởi tạo với API key."""
+        from src.llm.venice_client import VeniceClient
+        client = VeniceClient(api_key="VENICE_INFERENCE_KEY_test")
+        assert client.api_key == "VENICE_INFERENCE_KEY_test"
+        assert client.model == VeniceClient.DEFAULT_MODEL
 
     def test_client_custom_model(self):
-        """OpenRouterClient dùng được model tùy chỉnh."""
-        from src.llm.openrouter_client import OpenRouterClient
-        client = OpenRouterClient(api_key="sk-or-test", model="mistralai/mistral-nemo")
-        assert client.model == "mistralai/mistral-nemo"
+        """VeniceClient dùng được model tùy chỉnh."""
+        from src.llm.venice_client import VeniceClient
+        client = VeniceClient(api_key="VENICE_INFERENCE_KEY_test", model="llama-3.3-70b")
+        assert client.model == "llama-3.3-70b"
 
     def test_is_available_with_valid_key(self):
-        """is_available() trả về True khi key hợp lệ (bắt đầu bằng sk-or-)."""
-        from src.llm.openrouter_client import OpenRouterClient
-        client = OpenRouterClient(api_key="sk-or-v1-abc123test")
+        """is_available() trả về True khi key hợp lệ (bắt đầu bằng VENICE_)."""
+        from src.llm.venice_client import VeniceClient
+        client = VeniceClient(api_key="VENICE_INFERENCE_KEY_AeZ2jYOeQKKHsNl6hkxYh2tztLeJjed1KmwibD5OPy")
         assert client.is_available() is True
 
     def test_is_available_with_empty_key(self):
         """is_available() trả về False khi key rỗng."""
-        from src.llm.openrouter_client import OpenRouterClient
-        client = OpenRouterClient(api_key="")
-        assert client.is_available() is False
-
-    def test_is_available_with_wrong_prefix(self):
-        """is_available() trả về False nếu key không bắt đầu bằng sk-or-."""
-        from src.llm.openrouter_client import OpenRouterClient
-        client = OpenRouterClient(api_key="gsk_something_groq")
+        from src.llm.venice_client import VeniceClient
+        client = VeniceClient(api_key="")
         assert client.is_available() is False
 
     def test_fallback_models_list(self):
-        """FALLBACK_MODELS không rỗng và chứa ít nhất 1 model miễn phí."""
-        from src.llm.openrouter_client import OpenRouterClient
-        assert len(OpenRouterClient.FALLBACK_MODELS) >= 1
-        # Phải có ít nhất 1 model :free để dự phòng
-        free_models = [m for m in OpenRouterClient.FALLBACK_MODELS if ":free" in m]
-        assert len(free_models) >= 1, "Cần ít nhất 1 model :free trong FALLBACK_MODELS"
+        """FALLBACK_MODELS không rỗng."""
+        from src.llm.venice_client import VeniceClient
+        assert len(VeniceClient.FALLBACK_MODELS) >= 1
+        assert "default" in VeniceClient.FALLBACK_MODELS
 
-    def test_base_url_is_openrouter(self):
-        """BASE_URL phải trỏ về openrouter.ai."""
-        from src.llm.openrouter_client import OpenRouterClient
-        assert "openrouter.ai" in OpenRouterClient.BASE_URL
+    def test_base_url_is_venice(self):
+        """BASE_URL phải trỏ về venice.ai."""
+        from src.llm.venice_client import VeniceClient
+        assert "venice.ai" in VeniceClient.BASE_URL
 
-    def test_singleton_get_openrouter_client_no_key(self, monkeypatch):
-        """get_openrouter_client() trả về None nếu OPENROUTER_API_KEY rỗng và không dùng local."""
-        import src.llm.openrouter_client as orc_module
-        # Reset singleton
-        orc_module._instance = None
-        monkeypatch.setattr("src.config.settings.OPENROUTER_API_KEY", "")
-        monkeypatch.setattr("src.config.settings.OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-        client = orc_module.get_openrouter_client()
+    def test_singleton_get_venice_client_no_key(self, monkeypatch):
+        """get_venice_client() trả về None nếu VENICE_API_KEY rỗng và không dùng local."""
+        import src.llm.venice_client as vc_module
+        vc_module._instance = None
+        monkeypatch.setattr("src.config.settings.VENICE_API_KEY", "")
+        monkeypatch.setattr("src.config.settings.VENICE_BASE_URL", "https://api.venice.ai/api/v1")
+        client = vc_module.get_venice_client()
         assert client is None
-        orc_module._instance = None  # cleanup
+        vc_module._instance = None
 
-    def test_singleton_get_openrouter_client_with_key(self, monkeypatch):
-        """get_openrouter_client() trả về OpenRouterClient nếu key hợp lệ."""
-        import src.llm.openrouter_client as orc_module
-        orc_module._instance = None
-        monkeypatch.setattr("src.config.settings.OPENROUTER_API_KEY", "sk-or-v1-testkey123")
-        client = orc_module.get_openrouter_client()
+    def test_singleton_get_venice_client_with_key(self, monkeypatch):
+        """get_venice_client() trả về VeniceClient nếu key hợp lệ."""
+        import src.llm.venice_client as vc_module
+        vc_module._instance = None
+        monkeypatch.setattr("src.config.settings.VENICE_API_KEY", "VENICE_INFERENCE_KEY_test123")
+        client = vc_module.get_venice_client()
         assert client is not None
         assert client.is_available() is True
-        orc_module._instance = None  # cleanup
+        vc_module._instance = None
 
 
 class TestNSFWConfig:
@@ -96,7 +86,6 @@ class TestNSFWConfig:
     def test_nsfw_channel_id_list_property(self):
         """nsfw_channel_id_list parses comma-separated IDs thành list[int]."""
         from src.config import Settings
-        # Tạo Settings giả với NSFW_CHANNEL_IDS cụ thể
         s = Settings(NSFW_CHANNEL_IDS="123456789,987654321", DISCORD_TOKEN="x", GROQ_API_KEY="x")
         result = s.nsfw_channel_id_list
         assert 123456789 in result
@@ -108,17 +97,17 @@ class TestNSFWConfig:
         s = Settings(NSFW_CHANNEL_IDS="", DISCORD_TOKEN="x", GROQ_API_KEY="x")
         assert s.nsfw_channel_id_list == []
 
-    def test_openrouter_api_key_setting_exists(self):
-        """Settings phải có trường OPENROUTER_API_KEY."""
+    def test_venice_api_key_setting_exists(self):
+        """Settings phải có trường VENICE_API_KEY."""
         from src.config import settings
-        assert hasattr(settings, "OPENROUTER_API_KEY")
-        assert isinstance(settings.OPENROUTER_API_KEY, str)
+        assert hasattr(settings, "VENICE_API_KEY")
+        assert isinstance(settings.VENICE_API_KEY, str)
 
-    def test_openrouter_default_model_setting_exists(self):
-        """Settings phải có trường OPENROUTER_DEFAULT_MODEL."""
+    def test_venice_default_model_setting_exists(self):
+        """Settings phải có trường VENICE_DEFAULT_MODEL."""
         from src.config import settings
-        assert hasattr(settings, "OPENROUTER_DEFAULT_MODEL")
-        assert len(settings.OPENROUTER_DEFAULT_MODEL) > 0
+        assert hasattr(settings, "VENICE_DEFAULT_MODEL")
+        assert len(settings.VENICE_DEFAULT_MODEL) > 0
 
 
 class TestNSFWPrompt:
@@ -133,7 +122,6 @@ class TestNSFWPrompt:
     def test_nsfw_addendum_has_safety_clause(self):
         """NSFW addendum phải có điều khoản bảo vệ trẻ em / an toàn."""
         from src.personality.prompts import NENEKA_NSFW_ADDENDUM
-        # Kiểm tra có nhắc đến giới hạn an toàn
         safety_keywords = ["trẻ em", "pháp luật", "TUYỆT ĐỐI"]
         assert any(kw in NENEKA_NSFW_ADDENDUM for kw in safety_keywords), \
             "NSFW addendum thiếu điều khoản bảo vệ / giới hạn an toàn"
@@ -141,7 +129,6 @@ class TestNSFWPrompt:
     def test_nsfw_addendum_preserves_neneka_character(self):
         """NSFW addendum phải duy trì phong cách Neneka."""
         from src.personality.prompts import NENEKA_NSFW_ADDENDUM
-        # Phải đề cập đến việc giữ phong cách Neneka
         style_keywords = ["Neneka", "Thất Vương", "tao nhã", "phong cách"]
         assert any(kw in NENEKA_NSFW_ADDENDUM for kw in style_keywords)
 

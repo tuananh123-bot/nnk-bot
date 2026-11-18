@@ -10,7 +10,7 @@ from discord.ext import commands
 from src.config import settings
 from src.llm.groq_client import GroqClient
 from src.llm.vision_client import vision_client
-from src.llm.openrouter_client import get_openrouter_client
+from src.llm.venice_client import get_venice_client
 from src.personality.engine import PersonalityEngine
 from src.memory.engine import MemoryEngine
 from src.bond.engine import BondEngine
@@ -135,10 +135,10 @@ class ChatCog(commands.Cog):
             messages.append({"role": "user", "content": user_message})
 
             try:
-                # Nếu kênh NSFW và OpenRouter được cấu hình → dùng OpenRouter
-                or_client = get_openrouter_client()
-                if is_nsfw and or_client and or_client.is_available():
-                    reply = await or_client.chat(messages, temperature=0.9, max_tokens=1200)
+                # Nếu kênh NSFW và Venice AI được cấu hình → dùng Venice AI
+                v_client = get_venice_client()
+                if is_nsfw and v_client and v_client.is_available():
+                    reply = await v_client.chat(messages, temperature=0.85, max_tokens=1200)
                 else:
                     reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
             except Exception as e:
