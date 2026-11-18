@@ -80,8 +80,9 @@ class OpenRouterClient:
         if extra_headers:
             headers.update(extra_headers)
 
-        # Thử lần lượt model chính rồi fallback
-        models_to_try = [use_model] + [m for m in self.FALLBACK_MODELS if m != use_model]
+        # Thử lần lượt model chính; nếu dùng local LLM thì chỉ dùng đúng model chỉ định
+        is_local = "localhost" in self.base_url or "127.0.0.1" in self.base_url
+        models_to_try = [use_model] if is_local else [use_model] + [m for m in self.FALLBACK_MODELS if m != use_model]
 
         last_error: Optional[Exception] = None
         for attempt_model in models_to_try:

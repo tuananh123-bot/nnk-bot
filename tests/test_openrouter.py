@@ -58,11 +58,12 @@ class TestOpenRouterClient:
         assert "openrouter.ai" in OpenRouterClient.BASE_URL
 
     def test_singleton_get_openrouter_client_no_key(self, monkeypatch):
-        """get_openrouter_client() trả về None nếu OPENROUTER_API_KEY rỗng."""
+        """get_openrouter_client() trả về None nếu OPENROUTER_API_KEY rỗng và không dùng local."""
         import src.llm.openrouter_client as orc_module
         # Reset singleton
         orc_module._instance = None
         monkeypatch.setattr("src.config.settings.OPENROUTER_API_KEY", "")
+        monkeypatch.setattr("src.config.settings.OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
         client = orc_module.get_openrouter_client()
         assert client is None
         orc_module._instance = None  # cleanup
