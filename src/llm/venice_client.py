@@ -64,8 +64,8 @@ class VeniceClient:
         if extra_headers:
             headers.update(extra_headers)
 
-        is_local = "localhost" in self.base_url or "127.0.0.1" in self.base_url
-        models_to_try = [use_model] if is_local else [use_model] + [m for m in self.FALLBACK_MODELS if m != use_model]
+        is_venice = "venice.ai" in self.base_url
+        models_to_try = [use_model] + [m for m in self.FALLBACK_MODELS if m != use_model] if is_venice else [use_model]
 
         last_error: Optional[Exception] = None
         for attempt_model in models_to_try:
@@ -139,9 +139,9 @@ def get_venice_client() -> Optional[VeniceClient]:
     if _instance is None:
         try:
             from src.config import settings
-            key = getattr(settings, "VENICE_API_KEY", "")
-            model = getattr(settings, "VENICE_DEFAULT_MODEL", None)
-            base_url = getattr(settings, "VENICE_BASE_URL", None)
+            key = getattr(settings, "NOTRACK_API_KEY", "") or getattr(settings, "VENICE_API_KEY", "")
+            base_url = (getattr(settings, "NOTRACK_BASE_URL", "") if getattr(settings, "NOTRACK_API_KEY", "") else "") or getattr(settings, "VENICE_BASE_URL", None)
+            model = (getattr(settings, "NOTRACK_DEFAULT_MODEL", "") if getattr(settings, "NOTRACK_API_KEY", "") else "") or getattr(settings, "VENICE_DEFAULT_MODEL", None)
             is_local = bool(base_url and ("localhost" in base_url or "127.0.0.1" in base_url))
             if key or is_local:
                 _instance = VeniceClient(api_key=key or "not-needed", model=model, base_url=base_url)

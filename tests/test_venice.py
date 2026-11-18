@@ -53,6 +53,7 @@ class TestVeniceClient:
         import src.llm.venice_client as vc_module
         vc_module._instance = None
         monkeypatch.setattr("src.config.settings.VENICE_API_KEY", "")
+        monkeypatch.setattr("src.config.settings.NOTRACK_API_KEY", "")
         monkeypatch.setattr("src.config.settings.VENICE_BASE_URL", "https://api.venice.ai/api/v1")
         client = vc_module.get_venice_client()
         assert client is None

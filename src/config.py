@@ -20,16 +20,19 @@ class Settings(BaseSettings):
     def max_bond_user_id_list(self) -> List[str]:
         return [uid.strip() for uid in self.MAX_BOND_USER_IDS.split(",") if uid.strip()]
 
-    # Venice AI / Local Uncensored LLM (OpenAI-compatible)
-    VENICE_API_KEY: str = Field(default="", description="Venice AI API Key hoặc Local key ('local', 'not-needed')")
+    # Uncensored LLM (NoTrack AI / Venice AI / Local LLM - OpenAI-compatible)
+    VENICE_API_KEY: str = Field(default="", description="API Key cho NoTrack AI hoặc Venice AI hoặc Local LLM")
     VENICE_DEFAULT_MODEL: str = Field(
-        default="deepseek-v4-pro-qwen3.5-9b-uncensored-heretic",
-        description="Model mặc định cho Venice AI / Local LLM"
+        default="notrack-uncensored",
+        description="Model mặc định cho Uncensored LLM (ví dụ: notrack-uncensored, default)"
     )
     VENICE_BASE_URL: str = Field(
-        default="http://localhost:1235/v1",
-        description="Base URL cho Venice AI API / Local LLM (mặc định http://localhost:1235/v1 hoặc https://api.venice.ai/api/v1)"
+        default="https://api.notrack.ai/v1",
+        description="Base URL cho API không kiểm duyệt (mặc định https://api.notrack.ai/v1 hoặc https://api.venice.ai/api/v1 hoặc http://localhost:1235/v1)"
     )
+    NOTRACK_API_KEY: str = Field(default="", description="NoTrack AI API Key (sk-notrack-...)")
+    NOTRACK_DEFAULT_MODEL: str = Field(default="notrack-uncensored", description="Model NoTrack")
+    NOTRACK_BASE_URL: str = Field(default="https://api.notrack.ai/v1", description="Base URL NoTrack")
 
     # AI Horde (Image Generation / Distributed Cluster)
     AI_HORDE_API_KEY: str = Field(default="", description="AI Horde API Key (https://aihorde.net/)")
