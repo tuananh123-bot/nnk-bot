@@ -1014,6 +1014,26 @@ class ChatCog(commands.Cog):
             await message.reply(embed=embed)
             return
 
+        # 9.7 Kiểm tra nếu người dùng yêu cầu quên tin nhắn tự nhiên (30 phút, 1 tiếng, toàn bộ)
+        forget_phrases = ["quên tin nhắn", "xóa tin nhắn", "forget tin nhắn", "quên 30 phút", "quên 1 tiếng", "quên 30p", "quên 1h", "quên 30m"]
+        if any(term in clean_content.lower() for term in forget_phrases):
+            lower_msg = clean_content.lower()
+            from src.cogs.memory import parse_timeframe_to_minutes, build_forget_embed
+            mins = parse_timeframe_to_minutes(lower_msg)
+            if mins == -1:
+                res = await memory_engine.forget_recent_messages(str(message.author.id), minutes=None)
+                time_label = "toàn bộ lịch sử tin nhắn"
+            elif mins is not None:
+                res = await memory_engine.forget_recent_messages(str(message.author.id), minutes=mins)
+                time_label = f"{mins} phút" if mins < 60 else f"{mins // 60} tiếng"
+            else:
+                res = await memory_engine.forget_recent_messages(str(message.author.id), minutes=30)
+                time_label = "30 phút"
+
+            embed = build_forget_embed(message.author, res, time_label)
+            await message.reply(embed=embed)
+            return
+
         # 10. Tạo phản hồi hội thoại thông thường và gửi (hỗ trợ cả văn bản và hình ảnh)
         async with message.channel.typing():
             image_data = None

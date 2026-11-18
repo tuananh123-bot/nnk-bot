@@ -2,7 +2,7 @@
 import re
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -303,6 +303,68 @@ class MemoryEngine:
             res = await session.execute(del_stmt)
             await session.commit()
             return res.rowcount or 0
+
+    async def forget_recent_messages(
+        self,
+        discord_user_id: str,
+        minutes: Optional[int] = 30,
+        channel_id: Optional[str] = None
+    ) -> Dict[str, int]:
+        """
+        Xóa tin nhắn (Message), ngữ cảnh ngắn hạn (ShortTermMemory) và ký ức dài hạn (LongTermMemory)
+        của người dùng trong vòng `minutes` phút gần nhất.
+        Nếu minutes is None hoặc minutes <= 0: Xóa toàn bộ tin nhắn và ngữ cảnh ngắn hạn của user.
+        """
+        async for session in db_manager.get_session():
+            stmt = select(User).where(User.discord_user_id == str(discord_user_id))
+            user = (await session.execute(stmt)).scalar_one_or_none()
+            if not user:
+                return {"short_term": 0, "messages": 0, "long_term": 0, "total": 0}
+
+            cutoff_time = None
+            if minutes and minutes > 0:
+                cutoff_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=minutes)
+
+            # 1. Xóa ShortTermMemory
+            del_stm = delete(ShortTermMemory).where(ShortTermMemory.user_id == user.id)
+            if cutoff_time:
+                del_stm = del_stm.where(ShortTermMemory.created_at >= cutoff_time)
+            if channel_id:
+                del_stm = del_stm.where(ShortTermMemory.channel_id == str(channel_id))
+            res_stm = await session.execute(del_stm)
+            deleted_stm = res_stm.rowcount or 0
+
+            # 2. Xóa Message trong các cuộc hội thoại của user
+            conv_stmt = select(Conversation.id).where(Conversation.user_id == user.id)
+            if channel_id:
+                conv_stmt = conv_stmt.where(Conversation.channel_id == str(channel_id))
+            conv_ids = (await session.execute(conv_stmt)).scalars().all()
+
+            deleted_msgs = 0
+            if conv_ids:
+                del_msg = delete(Message).where(Message.conversation_id.in_(conv_ids))
+                if cutoff_time:
+                    del_msg = del_msg.where(Message.created_at >= cutoff_time)
+                res_msg = await session.execute(del_msg)
+                deleted_msgs = res_msg.rowcount or 0
+
+            # 3. Xóa LongTermMemory được trích xuất trong khoảng thời gian này (nếu có)
+            deleted_ltm = 0
+            if cutoff_time:
+                del_ltm = delete(LongTermMemory).where(
+                    LongTermMemory.user_id == user.id,
+                    LongTermMemory.created_at >= cutoff_time
+                )
+                res_ltm = await session.execute(del_ltm)
+                deleted_ltm = res_ltm.rowcount or 0
+
+            await session.commit()
+            return {
+                "short_term": deleted_stm,
+                "messages": deleted_msgs,
+                "long_term": deleted_ltm,
+                "total": deleted_stm + deleted_msgs + deleted_ltm
+            }
 
     async def get_user_memories(self, discord_user_id: str) -> List[Dict[str, Any]]:
         """Lấy toàn bộ danh sách ký ức dài hạn để người dùng kiểm tra (/memory)"""

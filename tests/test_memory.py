@@ -67,3 +67,42 @@ async def test_long_term_memory_retrieval_and_forget():
 
     await db_manager.close()
 
+def test_parse_timeframe():
+    from src.cogs.memory import parse_timeframe_to_minutes
+    assert parse_timeframe_to_minutes("30m") == 30
+    assert parse_timeframe_to_minutes("30p") == 30
+    assert parse_timeframe_to_minutes("30 phút") == 30
+    assert parse_timeframe_to_minutes("1h") == 60
+    assert parse_timeframe_to_minutes("1 tiếng") == 60
+    assert parse_timeframe_to_minutes("all") == -1
+    assert parse_timeframe_to_minutes(None) == 30
+
+@pytest.mark.asyncio
+async def test_forget_recent_messages_30m():
+    await db_manager.initialize()
+    engine = MemoryEngine()
+    uid = f"test_user_forget_{uuid.uuid4().hex[:8]}"
+
+    await engine.record_exchange(
+        discord_user_id=uid,
+        username="ForgetUser",
+        channel_id="ch_forget",
+        user_message="Một tin nhắn bí mật vừa gửi 5 phút trước",
+        bot_response="Ta đã ghi nhớ cuộc trò chuyện này."
+    )
+
+    ctx_before = await engine.get_memory_context(uid, current_query="tin nhắn")
+    assert len(ctx_before["recent_history"]) >= 1
+
+    # Forget recent messages within 30 minutes
+    res = await engine.forget_recent_messages(uid, minutes=30)
+    assert res["total"] >= 2
+    assert res["short_term"] >= 1
+    assert res["messages"] >= 2
+
+    # Verify context history is now wiped
+    ctx_after = await engine.get_memory_context(uid, current_query="tin nhắn")
+    assert len(ctx_after["recent_history"]) == 0
+
+    await db_manager.close()
+
