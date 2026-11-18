@@ -342,13 +342,15 @@ class ChatCog(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="status", description="👑 Xem bảng trạng thái, hảo cảm, mức độ dâm dục & hứng cảm của Neneka")
-    async def cmd_status(self, interaction: discord.Interaction):
-        bond_info = await bond_engine.get_bond_info(str(interaction.user.id))
+    @app_commands.describe(user="Xem bảng trạng thái gắn kết của một thành viên khác (bỏ trống để xem của bạn)")
+    async def cmd_status(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        target = user or interaction.user
+        bond_info = await bond_engine.get_bond_info(str(target.id))
         st = personality_engine.state
         is_creator = bond_info.get("is_creator", False)
 
         if is_creator:
-            embed = discord.Embed(title="👑 Bảng Trạng Thái - Utsushimi Neneka (ĐẤNG SÁNG TẠO)", color=0xf1c40f)
+            embed = discord.Embed(title=f"👑 Bảng Trạng Thái - Utsushimi Neneka ({target.display_name} • ĐẤNG SÁNG TẠO)", color=0xf1c40f)
             embed.add_field(name="👑 Thân Phận Tối Cao", value=f"**{bond_info['title']}** (Điểm: **∞ / Vĩnh Cửu**)", inline=False)
             embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value="`deep_reverence (Cung kính & Tôn trọng tuyệt đối)`", inline=True)
             embed.add_field(name="🛡️ Độ Tin Tưởng", value="`100% (Tuyệt đối)`", inline=True)
@@ -373,7 +375,7 @@ class ChatCog(commands.Cog):
             return
 
         if bond_info.get("is_max_bond"):
-            embed = discord.Embed(title="💖 Bảng Trạng Thái - Utsushimi Neneka (MỐI QUAN HỆ SÂU SẮC NHẤT)", color=0xff79c6)
+            embed = discord.Embed(title=f"💖 Bảng Trạng Thái - Utsushimi Neneka ({target.display_name} • MỐI QUAN HỆ SÂU SẮC NHẤT)", color=0xff79c6)
             embed.add_field(name="💖 Cấp Độ Gắn Kết", value=f"**Cấp 6 (TỐI THƯỢNG)**: *{bond_info['title']}* (9999 pts)", inline=False)
             embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value="`affectionate_warmth (Ấm áp, Yêu thương & Tin tưởng tuyệt đối)`", inline=True)
             embed.add_field(name="🛡️ Độ Tin Tưởng", value="`100% (Tuyệt đối)`", inline=True)
@@ -397,7 +399,7 @@ class ChatCog(commands.Cog):
             await interaction.response.send_message(embed=embed)
             return
 
-        embed = discord.Embed(title="👑 Bảng Trạng Thái - Utsushimi Neneka", color=0x9b59b6)
+        embed = discord.Embed(title=f"👑 Bảng Trạng Thái - Utsushimi Neneka [{target.display_name}]", color=0x9b59b6)
         embed.add_field(name="💜 Cấp Độ Gắn Kết", value=f"**Cấp {bond_info['level']}**: *{bond_info['title']}* ({bond_info['points']} pts)", inline=False)
         embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value=f"`{st.emotional_state}`", inline=True)
         embed.add_field(name="🛡️ Độ Tự Tin", value=f"`{st.confidence}%`", inline=True)
@@ -449,15 +451,16 @@ class ChatCog(commands.Cog):
     # =========================================================================
     # LEGACY PREFIX COMMANDS (!n, n!)
     # =========================================================================
-    @commands.command(name="status")
-    async def pcmd_status(self, ctx):
-        """Hiển thị trạng thái hảo cảm, cảm xúc nội tâm, mức độ dâm dục & hứng cảm của Neneka"""
-        bond_info = await bond_engine.get_bond_info(str(ctx.author.id))
+    @commands.command(name="status", aliases=["trangthai"])
+    async def pcmd_status(self, ctx: commands.Context, user: Optional[discord.Member] = None):
+        """Hiển thị trạng thái hảo cảm, cảm xúc nội tâm, mức độ dâm dục & hứng cảm của Neneka: !n status [@user]"""
+        target = user or ctx.author
+        bond_info = await bond_engine.get_bond_info(str(target.id))
         st = personality_engine.state
         is_creator = bond_info.get("is_creator", False)
 
         if is_creator:
-            embed = discord.Embed(title="👑 Bảng Trạng Thái - Utsushimi Neneka (ĐẤNG SÁNG TẠO)", color=0xf1c40f)
+            embed = discord.Embed(title=f"👑 Bảng Trạng Thái - Utsushimi Neneka ({target.display_name} • ĐẤNG SÁNG TẠO)", color=0xf1c40f)
             embed.add_field(name="👑 Thân Phận Tối Cao", value=f"**{bond_info['title']}** (Điểm: **∞ / Vĩnh Cửu**)", inline=False)
             embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value="`deep_reverence (Cung kính & Tôn trọng tuyệt đối)`", inline=True)
             embed.add_field(name="🛡️ Độ Tin Tưởng", value="`100% (Tuyệt đối)`", inline=True)
@@ -482,7 +485,7 @@ class ChatCog(commands.Cog):
             return
 
         if bond_info.get("is_max_bond"):
-            embed = discord.Embed(title="💖 Bảng Trạng Thái - Utsushimi Neneka (MỐI QUAN HỆ SÂU SẮC NHẤT)", color=0xff79c6)
+            embed = discord.Embed(title=f"💖 Bảng Trạng Thái - Utsushimi Neneka ({target.display_name} • MỐI QUAN HỆ SÂU SẮC NHẤT)", color=0xff79c6)
             embed.add_field(name="💖 Cấp Độ Gắn Kết", value=f"**Cấp 6 (TỐI THƯỢNG)**: *{bond_info['title']}* (9999 pts)", inline=False)
             embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value="`affectionate_warmth (Ấm áp, Yêu thương & Tin tưởng tuyệt đối)`", inline=True)
             embed.add_field(name="🛡️ Độ Tin Tưởng", value="`100% (Tuyệt đối)`", inline=True)
@@ -506,7 +509,7 @@ class ChatCog(commands.Cog):
             await ctx.reply(embed=embed)
             return
 
-        embed = discord.Embed(title="👑 Bảng Trạng Thái - Utsushimi Neneka", color=0x9b59b6)
+        embed = discord.Embed(title=f"👑 Bảng Trạng Thái - Utsushimi Neneka [{target.display_name}]", color=0x9b59b6)
         embed.add_field(name="💜 Cấp Độ Gắn Kết", value=f"**Cấp {bond_info['level']}**: *{bond_info['title']}* ({bond_info['points']} pts)", inline=False)
         embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value=f"`{st.emotional_state}`", inline=True)
         embed.add_field(name="🛡️ Độ Tự Tin", value=f"`{st.confidence}%`", inline=True)
@@ -971,6 +974,24 @@ class ChatCog(commands.Cog):
                 inline=True
             )
             embed.set_footer(text="Seven Crowns Lewdness & Arousal Monitor • Princess Connect! Re:Dive")
+            await message.reply(embed=embed)
+            return
+
+        # 9.6 Kiểm tra nếu người dùng yêu cầu xem Bond / Hảo cảm tự nhiên (cho mình hoặc người khác)
+        bond_triggers = [
+            "coi bond", "kiểm tra bond", "xem bond", "check bond", "điểm bond",
+            "xem hảo cảm", "coi hảo cảm", "kiểm tra hảo cảm", "điểm hảo cảm", "cấp độ gắn kết"
+        ]
+        if any(term in clean_content.lower() for term in bond_triggers):
+            target = message.author
+            if message.mentions:
+                for m in message.mentions:
+                    if m.id != self.bot.user.id:
+                        target = m
+                        break
+            from src.cogs.bond import build_bond_embed
+            info = await bond_engine.get_bond_info(str(target.id))
+            embed = build_bond_embed(target, info)
             await message.reply(embed=embed)
             return
 

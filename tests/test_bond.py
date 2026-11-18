@@ -30,4 +30,32 @@ async def test_bond_calculation_and_unlock():
 
     await db_manager.close()
 
+def test_build_bond_embed_other_user():
+    from unittest.mock import MagicMock
+    from src.cogs.bond import build_bond_embed
+
+    mock_user = MagicMock()
+    mock_user.display_name = "Pecorine"
+
+    mock_info = {
+        "points": 350,
+        "level": 2,
+        "next_tier_points": 500,
+        "title": "Người Bạn Đồng Hành Đáng Tin",
+        "description": "Neneka xem bạn là một đồng minh hữu dụng.",
+        "salutation": "Pecorine",
+        "japanese_salutation": "ペコリーヌ",
+        "all_tiers": {
+            0: {"unlocked_story": None},
+            1: {"unlocked_story": "Câu chuyện đầu tiên"},
+            2: {"unlocked_story": "Bí mật Thất Vương"}
+        }
+    }
+
+    embed = build_bond_embed(mock_user, mock_info)
+    assert "Pecorine" in embed.title
+    assert "350" in embed.fields[0].value
+    assert "Pecorine" in embed.fields[1].value
+    assert len(embed.fields) >= 3
+
 
