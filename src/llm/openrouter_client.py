@@ -22,7 +22,7 @@ class OpenRouterClient:
         "sao10k/l3.3-euryale-70b",
         "eva-unit-01/eva-llama-3.33-70b",
         "anthracite-org/magnum-v4-72b",
-        "mistralai/mistral-nemo",
+        "mistralai/mistral-nemo:free",
     ]
     BASE_URL = "https://openrouter.ai/api/v1"
 
