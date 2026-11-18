@@ -20,6 +20,26 @@ class Settings(BaseSettings):
     def max_bond_user_id_list(self) -> List[str]:
         return [uid.strip() for uid in self.MAX_BOND_USER_IDS.split(",") if uid.strip()]
 
+    # OpenRouter
+    OPENROUTER_API_KEY: str = Field(default="", description="OpenRouter API Key (sk-or-...)")
+    OPENROUTER_DEFAULT_MODEL: str = Field(
+        default="nousresearch/hermes-3-llama-3.1-405b:nitro",
+        description="Model mặc định cho OpenRouter"
+    )
+
+    # NSFW mode (per-guild / per-channel được lưu runtime; flag global này bật/tắt toàn bộ tính năng)
+    NSFW_ENABLED: bool = Field(default=False, description="Cho phép nội dung 18+ toàn cục (True/False)")
+    NSFW_CHANNEL_IDS: str = Field(default="", description="Comma-separated channel IDs được phép NSFW")
+
+    @property
+    def nsfw_channel_id_list(self) -> List[int]:
+        ids = []
+        for raw in self.NSFW_CHANNEL_IDS.split(","):
+            raw_s = raw.strip()
+            if raw_s.isdigit():
+                ids.append(int(raw_s))
+        return ids
+
     # Groq & LLM
     GROQ_API_KEY: str = Field(default="", description="Groq API Key")
     GROQ_MODEL: str = Field(default="qwen/qwen3.8-27b", description="Mô hình LLM Groq")

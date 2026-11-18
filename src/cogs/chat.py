@@ -2,7 +2,7 @@
 import re
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Set, Tuple
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -10,6 +10,7 @@ from discord.ext import commands
 from src.config import settings
 from src.llm.groq_client import GroqClient
 from src.llm.vision_client import vision_client
+from src.llm.openrouter_client import get_openrouter_client
 from src.personality.engine import PersonalityEngine
 from src.memory.engine import MemoryEngine
 from src.bond.engine import BondEngine
@@ -25,6 +26,9 @@ from src.voice.song_manager import is_singing_request, create_song_embed
 from src.voice.voice_channel import voice_channel_mgr
 
 logger = logging.getLogger("Neneka.Chat")
+
+# Runtime NSFW channel set (admin command bật/tắt lúc runtime, không lưu disk)
+_nsfw_runtime_channels: Set[int] = set()
 
 groq_client = GroqClient()
 personality_engine = PersonalityEngine()
@@ -51,6 +55,16 @@ class ChatCog(commands.Cog):
         is_creator = (str(discord_user_id) == str(settings.CREATOR_USER_ID))
         is_max_bond = (str(discord_user_id) in settings.max_bond_user_id_list)
 
+        # 1b. Kiểm tra kênh NSFW
+        is_nsfw = False
+        if settings.NSFW_ENABLED:
+            try:
+                ch_id_int = int(channel_id)
+            except (ValueError, TypeError):
+                ch_id_int = 0
+            if ch_id_int in settings.nsfw_channel_id_list or ch_id_int in _nsfw_runtime_channels:
+                is_nsfw = True
+
         # 2. Truy xuất Ký ức có chọn lọc (không đổ cả database)
         mem_ctx = await memory_engine.get_memory_context(discord_user_id, user_message)
         preferred_name = mem_ctx["preferred_name"]
@@ -67,15 +81,21 @@ class ChatCog(commands.Cog):
         bond_info = await bond_engine.get_bond_info(discord_user_id)
         salutation = "Sheffy-sama" if is_creator else bond_info["salutation"]
 
-        # 4. Cập nhật trạng thái tính cách dựa trên tin nhắn
-        personality_engine.update_from_interaction(user_message, is_creator=is_creator, is_max_bond=is_max_bond)
+        # 4. Cập nhật trạng thái tính cách dựa trên tin nhắn (bao gồm dâm dục và hứng cảm)
+        personality_engine.update_from_interaction(
+            user_message,
+            is_creator=is_creator,
+            is_max_bond=is_max_bond,
+            is_nsfw=is_nsfw
+        )
 
         # 5. Xây dựng System Prompt kết hợp
         base_system_prompt = personality_engine.get_system_prompt(
             user_language=lang,
             user_name=f"{preferred_name} (Danh xưng phù hợp: {salutation})",
             is_creator=is_creator,
-            is_max_bond=is_max_bond
+            is_max_bond=is_max_bond,
+            is_nsfw=is_nsfw
         )
 
         # Ngữ cảnh thời gian và thời tiết thực tế tại Việt Nam (UTC+7)
@@ -112,9 +132,14 @@ class ChatCog(commands.Cog):
             messages.append({"role": "user", "content": user_message})
 
             try:
-                reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
+                # Nếu kênh NSFW và OpenRouter được cấu hình → dùng OpenRouter
+                or_client = get_openrouter_client()
+                if is_nsfw and or_client and or_client.is_available():
+                    reply = await or_client.chat(messages, temperature=0.9, max_tokens=1200)
+                else:
+                    reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
             except Exception as e:
-                logger.error(f"Lỗi khi gọi Groq LLM: {e}")
+                logger.error(f"Lỗi khi gọi LLM: {e}")
                 reply = "*khẽ nhấp ngụm trà, ánh mắt khép hờ* Fufu... Ma lực thực tại vừa có chút nhiễu loạn. Cậu nói lại xem nào?"
 
         # 7. Cộng điểm Bond và cập nhật Ký ức
@@ -290,12 +315,117 @@ class ChatCog(commands.Cog):
         embed.set_footer(text="Seven Crowns Real-Time Geo • Princess Connect! Re:Dive")
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="status", description="👑 Xem bảng trạng thái, hảo cảm, mức độ dâm dục & hứng cảm của Neneka")
+    async def cmd_status(self, interaction: discord.Interaction):
+        bond_info = await bond_engine.get_bond_info(str(interaction.user.id))
+        st = personality_engine.state
+        is_creator = bond_info.get("is_creator", False)
+
+        if is_creator:
+            embed = discord.Embed(title="👑 Bảng Trạng Thái - Utsushimi Neneka (ĐẤNG SÁNG TẠO)", color=0xf1c40f)
+            embed.add_field(name="👑 Thân Phận Tối Cao", value=f"**{bond_info['title']}** (Điểm: **∞ / Vĩnh Cửu**)", inline=False)
+            embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value="`deep_reverence (Cung kính & Tôn trọng tuyệt đối)`", inline=True)
+            embed.add_field(name="🛡️ Độ Tin Tưởng", value="`100% (Tuyệt đối)`", inline=True)
+            embed.add_field(name="💬 Mức Hảo Cảm", value="`1000/1000 (Tối thượng)`", inline=True)
+            embed.add_field(
+                name="💋 Mức Độ Dâm Dục (Lust)",
+                value=f"`{st.lust_bar}` • **{st.lust_description}**\n*(Sẵn sàng buông bỏ mọi phòng ngự, thuận theo mọi mong muốn của Đấng Sáng Tạo)*",
+                inline=False
+            )
+            embed.add_field(
+                name="🔥 Mức Độ Hứng Cảm (Arousal)",
+                value=f"`{st.arousal_bar}` • **{st.arousal_description}**\n*(Rung động mãnh liệt trước từng ánh mắt, hơi thở và lời nói của Sheffy-sama)*",
+                inline=False
+            )
+            embed.add_field(
+                name="🗣️ Danh Xưng",
+                value=f"Tiếng Việt: **\"{bond_info['salutation']}\"**\nTiếng Nhật: **「{bond_info['japanese_salutation']}」**",
+                inline=False
+            )
+            embed.set_footer(text="Seven Crowns Reality Engine • Special Creator Privilege")
+            await interaction.response.send_message(embed=embed)
+            return
+
+        if bond_info.get("is_max_bond"):
+            embed = discord.Embed(title="💖 Bảng Trạng Thái - Utsushimi Neneka (MỐI QUAN HỆ SÂU SẮC NHẤT)", color=0xff79c6)
+            embed.add_field(name="💖 Cấp Độ Gắn Kết", value=f"**Cấp 6 (TỐI THƯỢNG)**: *{bond_info['title']}* (9999 pts)", inline=False)
+            embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value="`affectionate_warmth (Ấm áp, Yêu thương & Tin tưởng tuyệt đối)`", inline=True)
+            embed.add_field(name="🛡️ Độ Tin Tưởng", value="`100% (Tuyệt đối)`", inline=True)
+            embed.add_field(name="💬 Mức Hảo Cảm", value="`1000/1000 (Tối đa)`", inline=True)
+            embed.add_field(
+                name="💋 Mức Độ Dâm Dục (Lust)",
+                value=f"`{st.lust_bar}` • **{st.lust_description}**\n*(Khao khát thể xác nồng nàn hòa cùng tình yêu sâu sắc dành trọn cho người bạn đời)*",
+                inline=False
+            )
+            embed.add_field(
+                name="🔥 Mức Độ Hứng Cảm (Arousal)",
+                value=f"`{st.arousal_bar}` • **{st.arousal_description}**\n*(Cơ thể và tâm hồn cực kỳ nhạy cảm trước từng cái chạm và lời thì thầm ngọt ngào)*",
+                inline=False
+            )
+            embed.add_field(
+                name="🗣️ Danh Xưng",
+                value=f"Tiếng Việt: **\"{bond_info['salutation']}\"**\nTiếng Nhật: **「{bond_info['japanese_salutation']}」**",
+                inline=False
+            )
+            embed.set_footer(text="Seven Crowns Reality Engine • Deepest Soulmate Bond")
+            await interaction.response.send_message(embed=embed)
+            return
+
+        embed = discord.Embed(title="👑 Bảng Trạng Thái - Utsushimi Neneka", color=0x9b59b6)
+        embed.add_field(name="💜 Cấp Độ Gắn Kết", value=f"**Cấp {bond_info['level']}**: *{bond_info['title']}* ({bond_info['points']} pts)", inline=False)
+        embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value=f"`{st.emotional_state}`", inline=True)
+        embed.add_field(name="🛡️ Độ Tự Tin", value=f"`{st.confidence}%`", inline=True)
+        embed.add_field(name="💬 Mức Hảo Cảm", value=f"`{st.affection}/1000`", inline=True)
+        embed.add_field(
+            name="💋 Mức Độ Dâm Dục (Lust)",
+            value=f"`{st.lust_bar}` • **{st.lust_description}**",
+            inline=False
+        )
+        embed.add_field(
+            name="🔥 Mức Độ Hứng Cảm (Arousal)",
+            value=f"`{st.arousal_bar}` • **{st.arousal_description}**",
+            inline=False
+        )
+        embed.set_footer(text="Seven Crowns Simulation • Princess Connect! Re:Dive")
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="lust", description="💋 Xem chi tiết thanh mức độ dâm dục & hứng cảm của Neneka")
+    async def cmd_lust(self, interaction: discord.Interaction):
+        st = personality_engine.state
+        embed = discord.Embed(
+            title="💋 Ma Trận Cảm Xúc Thể Xác • Utsushimi Neneka",
+            description="*Phân tích phản ứng sinh lý, ham muốn thể xác và trạng thái hưng cảm của Thất Vương:*",
+            color=0xe91e63
+        )
+        embed.add_field(
+            name="💋 Mức Độ Dâm Dục (Lust / Libido)",
+            value=f"**{st.lust_bar}**\nSắc thái: **{st.lust_description}**",
+            inline=False
+        )
+        embed.add_field(
+            name="🔥 Mức Độ Hứng Cảm (Arousal / Excitement)",
+            value=f"**{st.arousal_bar}**\nTrạng thái cơ thể: **{st.arousal_description}**",
+            inline=False
+        )
+        embed.add_field(
+            name="🎭 Tâm Trạng Hiện Tại",
+            value=f"`{st.emotional_state}`",
+            inline=True
+        )
+        embed.add_field(
+            name="💜 Mức Hảo Cảm",
+            value=f"`{st.affection}/1000`",
+            inline=True
+        )
+        embed.set_footer(text="Seven Crowns Lewdness & Arousal Monitor • Princess Connect! Re:Dive")
+        await interaction.response.send_message(embed=embed)
+
     # =========================================================================
     # LEGACY PREFIX COMMANDS (!n, n!)
     # =========================================================================
     @commands.command(name="status")
     async def pcmd_status(self, ctx):
-        """Hiển thị trạng thái hảo cảm, cảm xúc hiện tại của Neneka"""
+        """Hiển thị trạng thái hảo cảm, cảm xúc nội tâm, mức độ dâm dục & hứng cảm của Neneka"""
         bond_info = await bond_engine.get_bond_info(str(ctx.author.id))
         st = personality_engine.state
         is_creator = bond_info.get("is_creator", False)
@@ -306,6 +436,16 @@ class ChatCog(commands.Cog):
             embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value="`deep_reverence (Cung kính & Tôn trọng tuyệt đối)`", inline=True)
             embed.add_field(name="🛡️ Độ Tin Tưởng", value="`100% (Tuyệt đối)`", inline=True)
             embed.add_field(name="💬 Mức Hảo Cảm", value="`1000/1000 (Tối thượng)`", inline=True)
+            embed.add_field(
+                name="💋 Mức Độ Dâm Dục (Lust)",
+                value=f"`{st.lust_bar}` • **{st.lust_description}**\n*(Sẵn sàng buông bỏ mọi phòng ngự, thuận theo mọi mong muốn của Đấng Sáng Tạo)*",
+                inline=False
+            )
+            embed.add_field(
+                name="🔥 Mức Độ Hứng Cảm (Arousal)",
+                value=f"`{st.arousal_bar}` • **{st.arousal_description}**\n*(Rung động mãnh liệt trước từng ánh mắt, hơi thở và lời nói của Sheffy-sama)*",
+                inline=False
+            )
             embed.add_field(
                 name="🗣️ Danh Xưng",
                 value=f"Tiếng Việt: **\"{bond_info['salutation']}\"**\nTiếng Nhật: **「{bond_info['japanese_salutation']}」**",
@@ -322,6 +462,16 @@ class ChatCog(commands.Cog):
             embed.add_field(name="🛡️ Độ Tin Tưởng", value="`100% (Tuyệt đối)`", inline=True)
             embed.add_field(name="💬 Mức Hảo Cảm", value="`1000/1000 (Tối đa)`", inline=True)
             embed.add_field(
+                name="💋 Mức Độ Dâm Dục (Lust)",
+                value=f"`{st.lust_bar}` • **{st.lust_description}**\n*(Khao khát thể xác nồng nàn hòa cùng tình yêu sâu sắc dành trọn cho người bạn đời)*",
+                inline=False
+            )
+            embed.add_field(
+                name="🔥 Mức Độ Hứng Cảm (Arousal)",
+                value=f"`{st.arousal_bar}` • **{st.arousal_description}**\n*(Cơ thể và tâm hồn cực kỳ nhạy cảm trước từng cái chạm và lời thì thầm ngọt ngào)*",
+                inline=False
+            )
+            embed.add_field(
                 name="🗣️ Danh Xưng",
                 value=f"Tiếng Việt: **\"{bond_info['salutation']}\"**\nTiếng Nhật: **「{bond_info['japanese_salutation']}」**",
                 inline=False
@@ -335,7 +485,49 @@ class ChatCog(commands.Cog):
         embed.add_field(name="🎭 Cảm Xúc Nội Tâm", value=f"`{st.emotional_state}`", inline=True)
         embed.add_field(name="🛡️ Độ Tự Tin", value=f"`{st.confidence}%`", inline=True)
         embed.add_field(name="💬 Mức Hảo Cảm", value=f"`{st.affection}/1000`", inline=True)
+        embed.add_field(
+            name="💋 Mức Độ Dâm Dục (Lust)",
+            value=f"`{st.lust_bar}` • **{st.lust_description}**",
+            inline=False
+        )
+        embed.add_field(
+            name="🔥 Mức Độ Hứng Cảm (Arousal)",
+            value=f"`{st.arousal_bar}` • **{st.arousal_description}**",
+            inline=False
+        )
         embed.set_footer(text="Seven Crowns Simulation • Princess Connect! Re:Dive")
+        await ctx.reply(embed=embed)
+
+    @commands.command(name="lust", aliases=["lewd", "sensual", "damduc", "hungcam"])
+    async def pcmd_lust(self, ctx):
+        """Xem chi tiết thanh mức độ dâm dục & hứng cảm của Neneka (!n lust / !n lewd)"""
+        st = personality_engine.state
+        embed = discord.Embed(
+            title="💋 Ma Trận Cảm Xúc Thể Xác • Utsushimi Neneka",
+            description="*Phân tích phản ứng sinh lý, ham muốn thể xác và trạng thái hưng cảm của Thất Vương:*",
+            color=0xe91e63
+        )
+        embed.add_field(
+            name="💋 Mức Độ Dâm Dục (Lust / Libido)",
+            value=f"**{st.lust_bar}**\nSắc thái: **{st.lust_description}**",
+            inline=False
+        )
+        embed.add_field(
+            name="🔥 Mức Độ Hứng Cảm (Arousal / Excitement)",
+            value=f"**{st.arousal_bar}**\nTrạng thái cơ thể: **{st.arousal_description}**",
+            inline=False
+        )
+        embed.add_field(
+            name="🎭 Tâm Trạng Hiện Tại",
+            value=f"`{st.emotional_state}`",
+            inline=True
+        )
+        embed.add_field(
+            name="💜 Mức Hảo Cảm",
+            value=f"`{st.affection}/1000`",
+            inline=True
+        )
+        embed.set_footer(text="Seven Crowns Lewdness & Arousal Monitor • Princess Connect! Re:Dive")
         await ctx.reply(embed=embed)
 
     @commands.command(name="gift")
@@ -539,7 +731,9 @@ class ChatCog(commands.Cog):
         embed.add_field(name="`/location [nơi]` hoặc `!n location [nơi]`", value="Đặt nơi ở để Neneka cập nhật thời tiết chuẩn xác mà không cần hỏi lại.", inline=False)
         embed.add_field(name="`/neneka`", value="Xem hồ sơ nhân vật Thất Vương.", inline=False)
         embed.add_field(name="`/costume [tên]`", value="Xem hoặc chuyển đổi trang phục (original, new_year, alpha).", inline=False)
-        embed.add_field(name="`/bond` hoặc `!n status`", value="Kiểm tra cấp độ gắn kết và điểm hảo cảm.", inline=False)
+        embed.add_field(name="`/bond` hoặc `!n status` / `/status`", value="Kiểm tra cấp độ gắn kết, điểm hảo cảm, thanh mức độ dâm dục & hứng cảm.", inline=False)
+        embed.add_field(name="`!n lust` hoặc `/lust` (hoặc `!n lewd`)", value="Xem chi tiết ma trận dâm dục (Lust) & mức độ hứng cảm (Arousal) của Neneka.", inline=False)
+        embed.add_field(name="`/nsfw <enable/disable/status>`", value="Bật/tắt chế độ nội dung 18+ cho kênh (yêu cầu Manage Channels hoặc Creator).", inline=False)
         embed.add_field(name="`/story [từ khóa]`", value="Tra cứu cốt truyện Canon và ký ức lưu trữ.", inline=False)
         embed.add_field(name="`/memory` & `/forget`", value="Quản lý và minh bạch ký ức dài hạn.", inline=False)
         embed.add_field(name="`!n nickname [@user] <tên>` hoặc `/nickname`", value="Đặt biệt danh để Neneka gọi bạn hoặc người khác.", inline=False)

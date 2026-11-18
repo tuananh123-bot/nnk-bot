@@ -7,6 +7,7 @@ from src.config import settings
 from src.autonomous.proactive_engine import proactive_engine
 from src.database.connection import db_manager
 from src.cache.redis_client import cache
+from src.cogs.chat import _nsfw_runtime_channels
 
 class AdminCog(commands.Cog):
     """Lệnh quản trị, cấu hình và giám sát trạng thái bot"""
@@ -51,6 +52,59 @@ class AdminCog(commands.Cog):
             await interaction.response.send_message(f"👑 Đã chuyển đổi chế độ hoạt động sang: **{mode}**.")
         else:
             await interaction.response.send_message("❌ Chế độ không hợp lệ.", ephemeral=True)
+
+    @app_commands.command(name="nsfw", description="🔞 Bật/Tắt chế độ nội dung 18+ cho kênh này (Admin hoặc Creator)")
+    @app_commands.describe(action="Chọn hành động: enable (bật) hoặc disable (tắt)")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="🔓 Bật NSFW cho kênh này", value="enable"),
+        app_commands.Choice(name="🔒 Tắt NSFW cho kênh này", value="disable"),
+        app_commands.Choice(name="📋 Xem trạng thái NSFW", value="status"),
+    ])
+    async def cmd_nsfw(self, interaction: discord.Interaction, action: str = "status"):
+        is_creator = (str(interaction.user.id) == str(settings.CREATOR_USER_ID))
+        has_perm = (
+            is_creator or
+            (interaction.user.guild_permissions and interaction.user.guild_permissions.manage_channels)
+        )
+        if not has_perm:
+            await interaction.response.send_message(
+                "❌ Bạn cần quyền `Manage Channels` hoặc là Người Sáng Tạo để quản lý NSFW.",
+                ephemeral=True
+            )
+            return
+
+        if not settings.NSFW_ENABLED:
+            await interaction.response.send_message(
+                "⚠️ Tính năng NSFW chưa được kích hoạt trong cấu hình bot (`NSFW_ENABLED=false`).\n"
+                "Liên hệ Người Sáng Tạo để bật tính năng này.",
+                ephemeral=True
+            )
+            return
+
+        cid = interaction.channel_id
+        if action == "enable":
+            _nsfw_runtime_channels.add(cid)
+            await interaction.response.send_message(
+                f"🔓 Đã **BẬT** chế độ nội dung 18+ trong {interaction.channel.mention}.\n"
+                "Neneka sẽ phản hồi các chủ đề nhạy cảm/người lớn tại kênh này.\n"
+                "⚠️ *Đảm bảo kênh đã được đánh dấu NSFW trong cài đặt Discord.*",
+                ephemeral=False
+            )
+        elif action == "disable":
+            _nsfw_runtime_channels.discard(cid)
+            await interaction.response.send_message(
+                f"🔒 Đã **TẮT** chế độ nội dung 18+ trong {interaction.channel.mention}.\n"
+                "Neneka sẽ trở về chế độ nội dung thông thường.",
+                ephemeral=False
+            )
+        else:
+            is_active = cid in _nsfw_runtime_channels or cid in settings.nsfw_channel_id_list
+            status_str = "🔓 **ĐANG BẬT**" if is_active else "🔒 **ĐANG TẮT**"
+            await interaction.response.send_message(
+                f"📋 Trạng thái NSFW tại {interaction.channel.mention}: {status_str}\n"
+                f"Tổng kênh NSFW (runtime): `{len(_nsfw_runtime_channels)}` kênh",
+                ephemeral=True
+            )
 
     @app_commands.command(name="admin", description="🛠️ Bảng điều khiển quản trị và trạng thái hệ thống")
     async def cmd_admin(self, interaction: discord.Interaction):
