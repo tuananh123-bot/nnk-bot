@@ -28,6 +28,15 @@ COSTUME_VARIANTS: Dict[str, Dict[str, Any]] = {
         "visual_description": "Áo blouse trắng phòng thí nghiệm kết hợp cùng trang phục công sở hiện đại thanh lịch, đeo kính gọng mảnh, phong thái tri thức của một chuyên gia nghiên cứu công nghệ thực tại ảo 24 tuổi.",
         "personality_flair": "Nghiêm túc, logic thuần túy, đôi lúc lộ vẻ mệt mỏi vì làm việc thâu đêm bên màn hình dữ liệu, rất trân trọng khi được đối phương pha cà phê cho.",
         "icon": "🔬"
+    },
+    "summer": {
+        "id": "variant_neneka_summer",
+        "name": "Neneka (Đồ Bơi Mùa Hè / Summer Swimsuit)",
+        "japanese_name": "ネネカ (サマー)",
+        "title": "Huyễn Ảnh Bờ Biển (Azure Summer Monarch)",
+        "visual_description": "Bộ bikini hai mảnh màu tím oải hương quyến rũ kết hợp áo khoác voan mỏng xuyên thấu phất phơ trong gió biển, chiếc mũ cói rộng vành quý phái che nắng, làn da trắng ngọc ngà dưới ánh nắng mùa hè nhiệt đới, quyền trượng Metamorphose cách điệu ánh xà cừ lấp lánh bọt sóng.",
+        "personality_flair": "Có phần ngượng ngùng khi để lộ nhiều da thịt trước mặt người đối thoại, nhưng vẫn giữ nét kiêu kỳ đặc trưng của Thất Vương; thích cùng đi dạo trên bờ cát vắng, ngắm hoàng hôn biển hoặc để đối phương thoa kem chống nắng lên lưng cho mình.",
+        "icon": "👙"
     }
 }
 
@@ -42,6 +51,26 @@ class CostumeManager:
 
     def set_user_costume(self, discord_user_id: str, variant_key: str) -> Optional[Dict[str, Any]]:
         variant_key = variant_key.lower().strip()
+        alias_map = {
+            "bikini": "summer",
+            "swimsuit": "summer",
+            "swimwear": "summer",
+            "do_boi": "summer",
+            "doboi": "summer",
+            "do boi": "summer",
+            "boi": "summer",
+            "summer": "summer",
+            "newyear": "new_year",
+            "new_year": "new_year",
+            "tet": "new_year",
+            "kimono": "new_year",
+            "real": "alpha",
+            "reality": "alpha",
+            "alpha": "alpha",
+            "original": "original",
+            "default": "original",
+        }
+        variant_key = alias_map.get(variant_key, variant_key)
         if variant_key not in COSTUME_VARIANTS:
             return None
         self._user_costumes[str(discord_user_id)] = variant_key

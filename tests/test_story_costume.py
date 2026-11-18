@@ -15,6 +15,15 @@ def test_costume_switching():
     current = costume_mgr.get_current_costume(user)
     assert current["id"] == "variant_neneka_new_year"
 
+    # Switch to summer (swimwear)
+    switched_summer = costume_mgr.set_user_costume(user, "summer")
+    assert switched_summer["id"] == "variant_neneka_summer"
+    assert "Đồ Bơi" in switched_summer["name"]
+
+    # Test alias (bikini / do_boi)
+    switched_bikini = costume_mgr.set_user_costume(user, "bikini")
+    assert switched_bikini["id"] == "variant_neneka_summer"
+
 def test_story_canon_status():
     canon_status = story_engine.verify_canon_status("Sự Xuất Hiện Của Thất Vương")
     assert canon_status == "CANON"
