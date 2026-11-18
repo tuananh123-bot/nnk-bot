@@ -24,6 +24,7 @@ from src.utils.vietnam_context import (
 )
 from src.voice.song_manager import is_singing_request, create_song_embed
 from src.voice.voice_channel import voice_channel_mgr
+from src.story.costumes import costume_mgr
 
 logger = logging.getLogger("Neneka.Chat")
 
@@ -89,13 +90,15 @@ class ChatCog(commands.Cog):
             is_nsfw=is_nsfw
         )
 
-        # 5. Xây dựng System Prompt kết hợp
+        # 5. Xây dựng System Prompt kết hợp (kèm trang phục hiện tại)
+        current_costume = costume_mgr.get_current_costume(discord_user_id)
         base_system_prompt = personality_engine.get_system_prompt(
             user_language=lang,
             user_name=f"{preferred_name} (Danh xưng phù hợp: {salutation})",
             is_creator=is_creator,
             is_max_bond=is_max_bond,
-            is_nsfw=is_nsfw
+            is_nsfw=is_nsfw,
+            costume=current_costume
         )
 
         # Ngữ cảnh thời gian và thời tiết thực tế tại Việt Nam (UTC+7)
@@ -730,7 +733,7 @@ class ChatCog(commands.Cog):
         embed.add_field(name="`/weather [nơi]` hoặc `!n weather [nơi]`", value="Tra cứu thời tiết thực tế tại Việt Nam (theo nơi ở của bạn hoặc thành phố chỉ định).", inline=False)
         embed.add_field(name="`/location [nơi]` hoặc `!n location [nơi]`", value="Đặt nơi ở để Neneka cập nhật thời tiết chuẩn xác mà không cần hỏi lại.", inline=False)
         embed.add_field(name="`/neneka`", value="Xem hồ sơ nhân vật Thất Vương.", inline=False)
-        embed.add_field(name="`/costume [tên]`", value="Xem hoặc chuyển đổi trang phục (original, new_year, alpha).", inline=False)
+        embed.add_field(name="`/costume [tên]`", value="Xem hoặc chuyển đổi trang phục (original, new_year, alpha, summer).", inline=False)
         embed.add_field(name="`/bond` hoặc `!n status` / `/status`", value="Kiểm tra cấp độ gắn kết, điểm hảo cảm, thanh mức độ dâm dục & hứng cảm.", inline=False)
         embed.add_field(name="`!n lust` hoặc `/lust` (hoặc `!n lewd`)", value="Xem chi tiết ma trận dâm dục (Lust) & mức độ hứng cảm (Arousal) của Neneka.", inline=False)
         embed.add_field(name="`/nsfw <enable/disable/status>`", value="Bật/tắt chế độ nội dung 18+ cho kênh (yêu cầu Manage Channels hoặc Creator).", inline=False)

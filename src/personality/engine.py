@@ -137,7 +137,8 @@ class PersonalityEngine:
         sensual_soft = [
             "gợi cảm", "goi cam", "sexy", "mê người", "me nguoi", "quyến rũ", "quyen ru",
             "eo thon", "đùi", "dui", "hôn", "hon", "ôm", "om", "vuốt tóc", "vuot toc",
-            "chạm", "cham", "nắm tay", "nam tay", "nằm cạnh", "nam canh", "xinh đẹp", "xinh dep"
+            "chạm", "cham", "nắm tay", "nam tay", "nằm cạnh", "nam canh", "xinh đẹp", "xinh dep",
+            "đồ bơi", "do boi", "áo tắm", "ao tam", "bikini", "bãi biển", "bai bien", "kem chống nắng", "kem chong nang"
         ]
         # Cấp 2: Kích thích thân mật sâu
         sensual_med = [
@@ -268,7 +269,8 @@ class PersonalityEngine:
         user_name: str = "Hiệp sĩ",
         is_creator: bool = False,
         is_max_bond: bool = False,
-        is_nsfw: bool = False
+        is_nsfw: bool = False,
+        costume: Optional[Dict[str, Any]] = None
     ) -> str:
         """Tổng hợp System Prompt đa tầng chuẩn mực cho Neneka"""
         st = self.state
@@ -291,6 +293,15 @@ class PersonalityEngine:
         creator_section = f"\n\n{NENEKA_CREATOR_DIRECTIVE}" if is_creator else ""
         max_bond_section = f"\n\n{NENEKA_MAX_BOND_DIRECTIVE}" if (is_max_bond and not is_creator) else ""
         nsfw_section = f"\n\n{NENEKA_NSFW_ADDENDUM}" if is_nsfw else ""
+
+        costume_section = ""
+        if costume:
+            costume_section = (
+                f"\n\n### TRANG PHỤC HIỆN TẠI NENEKA ĐANG MẶC:\n"
+                f"- Biến thể: {costume.get('icon', '👗')} **{costume.get('name', 'Neneka')}** ({costume.get('japanese_name', '')})\n"
+                f"- Ngoại hình: {costume.get('visual_description', '')}\n"
+                f"- Thần thái tương ứng: {costume.get('personality_flair', '')}"
+            )
 
         # Hướng dẫn biểu hiện cảm xúc thể xác dựa trên mức độ Dâm dục & Hứng cảm
         sensual_matrix_guide = ""
@@ -319,7 +330,7 @@ class PersonalityEngine:
 
         return f"""{NENEKA_CANON_BASE_PROMPT}
 
-{NENEKA_CANON_FACTS}{creator_section}{max_bond_section}{nsfw_section}{sensual_matrix_guide}
+{NENEKA_CANON_FACTS}{creator_section}{max_bond_section}{nsfw_section}{costume_section}{sensual_matrix_guide}
 
 {style_section}
 

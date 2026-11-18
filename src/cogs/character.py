@@ -31,11 +31,12 @@ class CharacterCog(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="costume", description="👗 Xem danh sách hoặc thay đổi trang phục của Neneka")
-    @app_commands.describe(variant="Chọn trang phục: original (Thất Vương), new_year (Tết Kimono), alpha (Thế giới thực)")
+    @app_commands.describe(variant="Chọn trang phục: original (Thất Vương), new_year (Tết Kimono), alpha (Thế giới thực), summer (Đồ bơi)")
     @app_commands.choices(variant=[
         app_commands.Choice(name="👑 Thất Vương Nguyên Bản (Original)", value="original"),
         app_commands.Choice(name="🌸 Kimono Đón Xuân (New Year)", value="new_year"),
         app_commands.Choice(name="🔬 Nhà Khoa Học Thực Tại (Reality Alpha)", value="alpha"),
+        app_commands.Choice(name="👙 Đồ Bơi Mùa Hè (Summer Swimsuit)", value="summer"),
     ])
     async def cmd_costume(self, interaction: discord.Interaction, variant: Optional[str] = None):
         if not variant:
@@ -61,6 +62,33 @@ class CharacterCog(commands.Cog):
             )
         else:
             await interaction.response.send_message("❌ Không tìm thấy trang phục hợp lệ.", ephemeral=True)
+
+    @commands.command(name="costume", aliases=["trangphuc", "doboi", "outfit"])
+    async def cmd_costume_prefix(self, ctx: commands.Context, variant: Optional[str] = None):
+        """Xem hoặc thay đổi trang phục của Neneka qua prefix !n costume."""
+        if not variant:
+            embed = discord.Embed(
+                title="👗 Tủ Trang Phục Của Neneka",
+                description="Dùng `!n costume <tên>` hoặc `/costume` để thay đổi ngoại hình và ngữ điệu tương ứng của Neneka!",
+                color=0x9b59b6
+            )
+            for c in costume_mgr.list_all_costumes():
+                embed.add_field(
+                    name=f"{c['icon']} {c['name']}",
+                    value=f"*{c['visual_description']}*\n👉 Chọn mã: `{c['id'].replace('variant_neneka_', '')}`",
+                    inline=False
+                )
+            await ctx.reply(embed=embed)
+            return
+
+        selected = costume_mgr.set_user_costume(str(ctx.author.id), variant)
+        if selected:
+            await ctx.reply(
+                f"✨ {selected['icon']} **Đã chuyển trang phục thành: {selected['name']}!**\n"
+                f"*{selected['personality_flair']}*"
+            )
+        else:
+            await ctx.reply("❌ Không tìm thấy trang phục hợp lệ. Bạn có thể chọn: `original`, `new_year`, `alpha`, `summer`.")
 
     @app_commands.command(name="story", description="📖 Tra cứu cốt truyện Canon và các mẩu truyện của Neneka")
     @app_commands.describe(query="Từ khóa tìm kiếm hoặc thể loại (Main, Character, Bond, Event, AI)")
