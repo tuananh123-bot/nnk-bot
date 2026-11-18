@@ -35,3 +35,22 @@ def test_system_prompt_multilingual():
     prompt_ja = engine.get_system_prompt("ja", "Kishi")
     assert "ネネカ（CV: 井口裕香）" in prompt_ja
 
+    prompt_en = engine.get_system_prompt("en", "Kishi")
+    assert "NENEKA'S ENGLISH DIALOGUE STYLE & PERSONA" in prompt_en
+    assert "dignified, intellectual, and composed mature lady" in prompt_en
+
+def test_detect_language():
+    engine = PersonalityEngine()
+    # English
+    assert engine.detect_language("Hello Neneka, how are you today?") == "en"
+    assert engine.detect_language("Can you tell me about the Seven Crowns?") == "en"
+    assert engine.detect_language("What time is it right now?") == "en"
+
+    # Japanese
+    assert engine.detect_language("こんにちは、ネネカさん！") == "ja"
+    assert engine.detect_language("おはようございます") == "ja"
+
+    # Vietnamese (accented and unaccented)
+    assert engine.detect_language("Chào buổi sáng quý cô Neneka!") == "vi"
+    assert engine.detect_language("hom nay the nao em") == "vi"
+    assert engine.detect_language("em an com chua") == "vi"

@@ -6,6 +6,7 @@ from src.personality.prompts import (
     NENEKA_CANON_BASE_PROMPT,
     NENEKA_VIETNAMESE_STYLE_PROMPT,
     NENEKA_JAPANESE_STYLE_PROMPT,
+    NENEKA_ENGLISH_STYLE_PROMPT,
     NENEKA_CANON_FACTS,
     NENEKA_CREATOR_DIRECTIVE,
     NENEKA_MAX_BOND_DIRECTIVE,
@@ -95,14 +96,58 @@ class PersonalityEngine:
         """Phát hiện ngôn ngữ người dùng nhập (ja, en, vi)"""
         if not text:
             return "vi"
-        # Japanese Kana / Kanji
+        # 1. Japanese Kana / Kanji
         if any(('\u3040' <= c <= '\u30ff') or ('\u4e00' <= c <= '\u9fff') for c in text):
             return "ja"
-        # Vietnamese diacritics
+        # 2. Vietnamese diacritics
         vn_chars = "àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ"
         if any(c in vn_chars for c in text.lower()):
             return "vi"
-        # Default English or Vietnamese fallback
+
+        # 3. Phân biệt tiếng Anh và tiếng Việt không dấu
+        lower = text.lower()
+        words = set(re.findall(r'[a-z]+', lower))
+        if not words:
+            return "vi"
+
+        english_common = {
+            "the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it",
+            "for", "not", "on", "with", "he", "as", "you", "do", "at", "this",
+            "but", "his", "by", "from", "they", "we", "say", "her", "she", "or",
+            "an", "will", "my", "one", "all", "would", "there", "their", "what",
+            "so", "up", "out", "if", "about", "who", "get", "which", "go", "me",
+            "when", "make", "can", "like", "time", "no", "just", "him", "know",
+            "take", "people", "into", "year", "your", "good", "some", "could",
+            "them", "see", "other", "than", "then", "now", "look", "only", "come",
+            "its", "over", "think", "also", "back", "after", "use", "two", "how",
+            "our", "work", "first", "well", "way", "even", "new", "want", "because",
+            "any", "these", "give", "day", "most", "us", "hello", "hi", "hey",
+            "please", "thanks", "thank", "love", "draw", "picture", "create",
+            "what's", "where", "why", "who", "how's", "are", "is", "am", "was",
+            "were", "been", "being", "today", "tomorrow", "tonight", "goodnight",
+            "tell", "story", "really", "very", "much", "yes", "sure", "fine", "great"
+        }
+
+        vietnamese_unaccented = {
+            "toi", "tao", "minh", "chung", "ta", "nguoi", "khong", "ko", "k", "dc",
+            "duoc", "biet", "chua", "roi", "dang", "lam", "gi", "sao", "the", "nao",
+            "hom", "nay", "mai", "qua", "an", "uong", "ngu", "nhe", "nha", "ha",
+            "oi", "em", "anh", "chi", "co", "chu", "bac", "ong", "ba", "may",
+            "vay", "cung", "nhu", "ma", "cho", "di", "ve", "den", "trong", "ngoai"
+        }
+
+        en_score = len(words.intersection(english_common))
+        vi_score = len(words.intersection(vietnamese_unaccented))
+
+        if en_score > vi_score:
+            return "en"
+        elif vi_score > en_score:
+            return "vi"
+
+        # Nếu có từ tiếng Anh phổ biến nhưng không có từ tiếng Việt
+        if en_score > 0 and vi_score == 0:
+            return "en"
+
         return "vi"
 
     def update_from_interaction(
@@ -374,8 +419,8 @@ class PersonalityEngine:
             lang_instruction = "IMPORTANT: The user message is in Japanese. Reply in natural, elegant Japanese anime style adhering to the Japanese style prompt."
             style_section = NENEKA_JAPANESE_STYLE_PROMPT
         elif user_language == "en":
-            lang_instruction = "IMPORTANT: The user message is in English. Reply in composed, intelligent English anime style."
-            style_section = ""
+            lang_instruction = "IMPORTANT: The user message is in English. Reply in composed, intelligent English anime style adhering to the English style prompt."
+            style_section = NENEKA_ENGLISH_STYLE_PROMPT
         else:
             lang_instruction = "IMPORTANT: The user message is in Vietnamese. Reply in natural, anime-cadence Vietnamese adhering to the Vietnamese style prompt."
             style_section = NENEKA_VIETNAMESE_STYLE_PROMPT
