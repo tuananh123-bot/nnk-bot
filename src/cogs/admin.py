@@ -8,6 +8,7 @@ from src.autonomous.proactive_engine import proactive_engine
 from src.database.connection import db_manager
 from src.cache.redis_client import cache
 from src.cogs.chat import _nsfw_runtime_channels
+from src.llm.model_status import build_model_status_embed, get_active_models_info
 
 class AdminCog(commands.Cog):
     """Lệnh quản trị, cấu hình và giám sát trạng thái bot"""
@@ -100,9 +101,11 @@ class AdminCog(commands.Cog):
         else:
             is_active = cid in _nsfw_runtime_channels or cid in settings.nsfw_channel_id_list
             status_str = "🔓 **ĐANG BẬT**" if is_active else "🔒 **ĐANG TẮT**"
+            status_embed = build_model_status_embed(is_channel_nsfw=is_active)
             await interaction.response.send_message(
                 f"📋 Trạng thái NSFW tại {interaction.channel.mention}: {status_str}\n"
                 f"Tổng kênh NSFW (runtime): `{len(_nsfw_runtime_channels)}` kênh",
+                embed=status_embed,
                 ephemeral=True
             )
 
@@ -114,13 +117,23 @@ class AdminCog(commands.Cog):
             return
         db_type = "Async SQLite (Local Fallback)" if db_manager.is_sqlite_fallback else "PostgreSQL (Production)"
         cache_type = "In-Memory RAM" if cache._use_fallback else "Redis (Live)"
+        models_info = get_active_models_info()
 
         embed = discord.Embed(
             title="🛠️ Bảng Quản Trị Hệ Thống - Neneka Autonomous AI",
             color=0x2ecc71
         )
         embed.add_field(name="🤖 Chế Độ Hoạt Động", value=f"`{proactive_engine.mode}`", inline=True)
-        embed.add_field(name="🧠 Mô Hình Groq", value=f"`{settings.GROQ_MODEL}`", inline=True)
+        embed.add_field(
+            name="🧠 Bot Thường (Groq)",
+            value=f"`{models_info['normal_bot']['active_model']}` ({models_info['normal_bot']['status']})",
+            inline=True
+        )
+        embed.add_field(
+            name="🔞 Bot NSFW",
+            value=f"`{models_info['nsfw_bot']['primary']['model']}` ({models_info['nsfw_bot']['primary']['status']})",
+            inline=True
+        )
         embed.add_field(name="🗄️ Database", value=f"`{db_type}`", inline=False)
         embed.add_field(name="⚡ Bộ Nhớ Cache", value=f"`{cache_type}`", inline=True)
         embed.add_field(name="📋 Số Kênh Auto-chat", value=f"`{len(proactive_engine.allowed_channels)}` kênh", inline=True)

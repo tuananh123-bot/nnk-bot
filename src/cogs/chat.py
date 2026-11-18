@@ -11,6 +11,7 @@ from src.config import settings
 from src.llm.groq_client import GroqClient
 from src.llm.vision_client import vision_client
 from src.llm.venice_client import get_venice_client, get_uncensored_ai_client
+from src.llm.model_status import build_model_status_embed, get_active_models_info
 from src.personality.engine import PersonalityEngine
 from src.memory.engine import MemoryEngine
 from src.bond.engine import BondEngine
@@ -56,10 +57,83 @@ def sanitize_neneka_reply(reply: str) -> str:
         sanitized = "*mỉm cười điềm đạm, đôi mắt tím ánh lên nét dịu dàng* Fufu... Ta đang lắng nghe đây. Cậu có điều gì muốn chia sẻ cùng ta sao?"
     return sanitized
 
+def is_ai_refusal(text: str) -> bool:
+    """Kiểm tra phản hồi có phải là câu từ chối do bộ lọc an toàn của LLM không."""
+    if not text:
+        return False
+    lower = text.strip().lower()
+    refusal_signatures = [
+        "i cannot fulfill this request",
+        "i can't fulfill this request",
+        "i am unable to fulfill",
+        "i'm unable to fulfill",
+        "i cannot fulfill that request",
+        "as an ai",
+        "as a responsible ai",
+        "as a language model",
+        "i cannot generate",
+        "i can't generate",
+        "violates my safety",
+        "violates our safety",
+        "content policy",
+        "safety guidelines",
+        "against my programming",
+        "explicit sexual content",
+        "sexually explicit",
+        "inappropriate request",
+        "tôi không thể thực hiện yêu cầu này",
+        "tôi không thể đáp ứng",
+        "chính sách an toàn",
+        "chính sách nội dung",
+        "là một mô hình ngôn ngữ ai",
+        "là một trợ lý ai",
+    ]
+    return any(sig in lower for sig in refusal_signatures)
+
 class ChatCog(commands.Cog):
     """Xử lý hội thoại tự nhiên, lệnh chat slash command và các lệnh tiền tố kế thừa (!n, n!)"""
     def __init__(self, bot):
         self.bot = bot
+
+    async def _call_nsfw_bot(self, messages: list) -> str:
+        """
+        Gọi chuỗi Bot NSFW: NoTrack AI -> Uncensored AI -> Fallback Groq -> AI Horde.
+        """
+        reply = None
+        # 1. Thử NoTrack AI (hoặc Venice / Local)
+        v_client = get_venice_client()
+        if v_client and v_client.is_available():
+            try:
+                reply = await v_client.chat(messages, temperature=0.85, max_tokens=1200)
+            except Exception as e_notrack:
+                logger.warning(f"NoTrack AI chat không hoạt động ({e_notrack}). Tự động chuyển tiếp sang Uncensored AI...")
+
+        # 2. Dự phòng: Uncensored AI (api.uncensored.com)
+        if not reply:
+            uai_client = get_uncensored_ai_client()
+            if uai_client and uai_client.is_available():
+                try:
+                    reply = await uai_client.chat(messages, temperature=0.85, max_tokens=1200)
+                except Exception as e_uai:
+                    logger.warning(f"Uncensored AI chat không khả dụng ({e_uai}).")
+
+        # 3. Dự phòng cấp 3: Groq
+        if not reply:
+            try:
+                reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
+            except Exception as e_groq:
+                logger.warning(f"Groq dự phòng cho NSFW thất bại ({e_groq}).")
+
+        # 4. Dự phòng cấp 4: AI Horde Text
+        if not reply:
+            from src.llm.horde_client import horde_client
+            if horde_client.is_available():
+                reply = await horde_client.chat(messages, max_tokens=400, temperature=0.8)
+
+        if not reply:
+            raise RuntimeError("Tất cả các Bot NSFW và dự phòng đều không phản hồi.")
+
+        return reply
 
     async def _generate_neneka_reply(
         self,
@@ -155,30 +229,29 @@ class ChatCog(commands.Cog):
             messages.append({"role": "user", "content": user_message})
 
             try:
-                # Nếu kênh NSFW: Ưu tiên NoTrack AI -> dự phòng Uncensored AI -> Groq
                 reply = None
+                is_nsfw_msg = personality_engine.detect_nsfw_intent(user_message)
+
                 if is_nsfw:
-                    # 1. Thử NoTrack AI (hoặc Venice / Local)
-                    v_client = get_venice_client()
-                    if v_client and v_client.is_available():
+                    if is_nsfw_msg:
+                        # Người dùng nói lời 18+ / nhạy cảm trong kênh NSFW: Gọi trực tiếp Bot NSFW
+                        logger.info("Phát hiện nội dung 18+/NSFW trong kênh NSFW. Khởi chạy Bot NSFW (NoTrack / Uncensored AI)...")
+                        reply = await self._call_nsfw_bot(messages)
+                    else:
+                        # Người dùng nói lời thông thường trong kênh NSFW: Chạy Bot Thường trước!
+                        logger.info("Lời thoại thông thường trong kênh NSFW. Khởi chạy Bot Thường (Groq) trước...")
                         try:
-                            reply = await v_client.chat(messages, temperature=0.85, max_tokens=1200)
-                        except Exception as e_notrack:
-                            logger.warning(f"NoTrack AI chat không hoạt động ({e_notrack}). Tự động chuyển tiếp sang Uncensored AI...")
-
-                    # 2. Dự phòng: Uncensored AI (api.uncensored.com)
-                    if not reply:
-                        uai_client = get_uncensored_ai_client()
-                        if uai_client and uai_client.is_available():
-                            try:
-                                reply = await uai_client.chat(messages, temperature=0.85, max_tokens=1200)
-                            except Exception as e_uai:
-                                logger.warning(f"Uncensored AI chat không khả dụng ({e_uai}).")
-
-                    # 3. Nếu cả 2 đều không phản hồi, dùng Groq
-                    if not reply:
-                        reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
+                            resp = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
+                            if is_ai_refusal(resp):
+                                logger.warning("Bot Thường từ chối phản hồi do chính sách an toàn. Tự động chuyển tiếp sang Bot NSFW...")
+                                reply = await self._call_nsfw_bot(messages)
+                            else:
+                                reply = resp
+                        except Exception as e_groq:
+                            logger.warning(f"Bot Thường gặp lỗi ({e_groq}). Tự động chuyển tiếp sang Bot NSFW...")
+                            reply = await self._call_nsfw_bot(messages)
                 else:
+                    # Kênh thông thường: Chạy Bot Thường
                     reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
             except Exception as e:
                 logger.warning(f"Lỗi khi gọi LLM chính ({e}), thử dự phòng qua AI Horde Text...")
@@ -323,6 +396,35 @@ class ChatCog(commands.Cog):
         embed.add_field(name="💜 Nhận Xét Của Neneka", value=f"*{comment.strip()}*", inline=False)
         embed.set_footer(text="Open-Meteo Real-Time Weather • Seven Crowns Intelligence")
         await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="model", description="🤖 Kiểm tra các mô hình AI (Bot Thường & Bot NSFW) đang chạy")
+    async def cmd_model(self, interaction: discord.Interaction):
+        ch_id = getattr(interaction.channel, "id", 0)
+        is_nsfw = False
+        if settings.NSFW_ENABLED:
+            if (
+                (hasattr(interaction.channel, "is_nsfw") and interaction.channel.is_nsfw()) or
+                ch_id in settings.nsfw_channel_id_list or
+                ch_id in _nsfw_runtime_channels
+            ):
+                is_nsfw = True
+        embed = build_model_status_embed(is_channel_nsfw=is_nsfw)
+        await interaction.response.send_message(embed=embed)
+
+    @commands.command(name="model", aliases=["models", "botstatus"])
+    async def cmd_model_prefix(self, ctx: commands.Context):
+        """Kiểm tra các mô hình AI đang chạy qua !n model."""
+        ch_id = getattr(ctx.channel, "id", 0)
+        is_nsfw = False
+        if settings.NSFW_ENABLED:
+            if (
+                (hasattr(ctx.channel, "is_nsfw") and ctx.channel.is_nsfw()) or
+                ch_id in settings.nsfw_channel_id_list or
+                ch_id in _nsfw_runtime_channels
+            ):
+                is_nsfw = True
+        embed = build_model_status_embed(is_channel_nsfw=is_nsfw)
+        await ctx.reply(embed=embed)
 
     @app_commands.command(name="location", description="📍 Đặt hoặc kiểm tra nơi sinh sống của bạn để Neneka cập nhật thời tiết chuẩn xác")
     @app_commands.describe(city="Tên thành phố tại Việt Nam (ví dụ: Sài Gòn, Hà Nội, Đà Nẵng, Bình Dương...) hoặc 'reset' để xóa")
@@ -1031,6 +1133,28 @@ class ChatCog(commands.Cog):
                 time_label = "30 phút"
 
             embed = build_forget_embed(message.author, res, time_label)
+            await message.reply(embed=embed)
+            return
+
+        # 9.8 Kiểm tra nếu người dùng hỏi về mô hình bot đang chạy (Bot Thường / Bot NSFW)
+        model_check_triggers = [
+            "bot nào đang chạy", "con bot nào đang chạy", "model nào đang chạy",
+            "bot nsfw nào đang chạy", "bot thường nào đang chạy", "kiểm tra model",
+            "check model", "check bot", "status model", "bot thường và bot nsfw",
+            "cho bt bot thường", "cho biết bot thường", "bot nao dang chay",
+            "model nao dang chay", "bot nsfw nao dang chay", "bot thuong nao dang chay"
+        ]
+        if any(term in clean_content.lower() for term in model_check_triggers):
+            is_ch_nsfw = False
+            if settings.NSFW_ENABLED:
+                ch_id = getattr(message.channel, "id", 0)
+                if (
+                    (hasattr(message.channel, "is_nsfw") and message.channel.is_nsfw()) or
+                    ch_id in settings.nsfw_channel_id_list or
+                    ch_id in _nsfw_runtime_channels
+                ):
+                    is_ch_nsfw = True
+            embed = build_model_status_embed(is_channel_nsfw=is_ch_nsfw)
             await message.reply(embed=embed)
             return
 

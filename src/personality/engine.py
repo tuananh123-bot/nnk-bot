@@ -274,6 +274,73 @@ class PersonalityEngine:
 
         self.state.clamp()
 
+    def detect_nsfw_intent(self, text: str) -> bool:
+        """
+        Kiểm tra xem tin nhắn có chứa nội dung/ý định nhạy cảm 18+ (NSFW / Erotic / Lewd) không.
+        Dùng để phân luồng thông minh khi kênh bật chế độ 18+:
+        - Lời thông thường: Bot Thường (Groq Qwen/Llama) chạy trước.
+        - Lời 18+ / khiêu dâm / thân mật thể xác: Bot NSFW (NoTrack / Uncensored AI) chạy.
+        """
+        if not text:
+            return False
+
+        lower = text.lower()
+        import unicodedata
+        lower_unaccented = ''.join(
+            c for c in unicodedata.normalize('NFD', lower) if unicodedata.category(c) != 'Mn'
+        ).replace('đ', 'd').replace('Đ', 'D')
+
+        # 1. Các cụm từ 18+ rõ ràng (substring match)
+        explicit_phrases = [
+            "làm tình", "lam tinh", "ân ái", "an ai", "dâm dục", "dam duc",
+            "hứng tình", "hung tinh", "nước nôi", "nuoc noi", "ướt át", "uot at",
+            "đút vào", "dut vao", "bên trong em", "ben trong em", "cực khoái", "cuc khoai",
+            "khoái cảm", "khoai cam", "lút cán", "lut can", "ra vào", "ra vao",
+            "cởi đồ", "coi do", "cởi áo", "coi ao", "cởi quần", "coi quan", "lột đồ", "lot do",
+            "cởi hết", "coi het", "cởi sạch", "coi sach", "cởi ra", "coi ra", "cởi trần", "coi tran",
+            "lột hết", "lot het", "lột sạch", "lot sach", "lột ra", "lot ra",
+            "khỏa thân", "khoa than", "nội y", "noi y", "quần lót", "quan lot", "áo ngực", "ao nguc",
+            "bầu ngực", "bau nguc", "nhũ hoa", "nhu hoa", "núm ti", "num ti",
+            "lên giường", "len giuong", "nằm đè", "nam de", "đè lên", "de len",
+            "bắn tinh", "ban tinh", "xuất tinh", "xuat tinh", "tinh trùng", "tinh trung",
+            "thủ dâm", "thu dam", "quay tay", "sóc lọ", "soc lo", "móc lốp", "moc lop",
+            "thịt em", "thit em", "ăn em", "an em", "húp sò", "hup so",
+            "bú liếm", "bu liem", "bú cu", "bu cu", "bú lồn", "bu lon", "bú kèn", "bu ken",
+            "thổi kèn", "thoi ken", "mút cu", "mut cu",
+            "sờ ngực", "so nguc", "sờ mông", "so mong", "sờ soạng", "so soang",
+            "ecchi", "hentai", "blowjob", "handjob", "creampie", "masturbat",
+        ]
+
+        for p in explicit_phrases:
+            if p in lower or p in lower_unaccented:
+                return True
+
+        # 2. Các từ 18+ đứng độc lập có dấu hoặc tiếng Anh (Regex word boundary)
+        standalone_terms = [
+            # Tiếng Việt có dấu (chính xác tuyệt đối, không nhầm lẫn)
+            r"chịch", r"phịch", r"đụ", r"địt", r"dâm", r"nứng", r"bú", r"liếm", r"mút",
+            r"lồn", r"cặc", r"buồi", r"bướm", r"dái", r"vú", r"ngực", r"mông",
+            # Tiếng Anh
+            r"sex", r"fuck", r"fucking", r"pussy", r"dick", r"cock", r"tits", r"boobs",
+            r"vagina", r"penis", r"cum", r"orgasm", r"horny", r"erotic", r"nsfw", r"nude"
+        ]
+
+        for term in standalone_terms:
+            pattern = r'(?:\b|\s|^)' + term + r'(?:\b|\s|$|[!?,.\-_])'
+            if re.search(pattern, lower):
+                return True
+
+        # 3. Tiếng Việt không dấu đặc thù (tránh nhầm "buổi" -> buoi, "các" -> cac, "lớn" -> lon, "đầm" -> dam)
+        unaccented_specific = [
+            r"chich", r"phich", r"nung"
+        ]
+        for term in unaccented_specific:
+            pattern = r'(?:\b|\s|^)' + term + r'(?:\b|\s|$|[!?,.\-_])'
+            if re.search(pattern, lower_unaccented):
+                return True
+
+        return False
+
     @staticmethod
     def _arousal_to_nsfw_tier(arousal: int, lust: int) -> int:
         """Chuyển đổi mức arousal/lust thành NSFW tier (1-4)."""
