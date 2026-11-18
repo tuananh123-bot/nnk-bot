@@ -66,7 +66,8 @@ class ProactiveEngine:
         is_mentioned: bool,
         is_reply_to_bot: bool,
         channel_id: int,
-        content: str
+        content: str,
+        has_attachments: bool = False
     ) -> Tuple[bool, str]:
         """
         Quyết định xem Neneka có nên phản hồi tin nhắn này hay không dựa trên Mode hoạt động
@@ -75,8 +76,8 @@ class ProactiveEngine:
         if is_bot:
             return False, "Tin nhắn từ bot khác"
 
-        # Tuyệt đối không trả lời nếu nội dung rỗng
-        if not content or not content.strip():
+        # Tuyệt đối không trả lời nếu nội dung rỗng và không có tệp đính kèm
+        if (not content or not content.strip()) and not has_attachments:
             return False, "Nội dung rỗng"
 
         # Trong tin nhắn trực tiếp (DM)

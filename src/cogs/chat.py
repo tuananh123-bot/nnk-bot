@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from src.config import settings
 from src.llm.groq_client import GroqClient
+from src.llm.vision_client import vision_client
 from src.personality.engine import PersonalityEngine
 from src.memory.engine import MemoryEngine
 from src.bond.engine import BondEngine
@@ -41,9 +42,10 @@ class ChatCog(commands.Cog):
         discord_user_id: str,
         username: str,
         guild_id: Optional[str],
-        channel_id: str
+        channel_id: str,
+        image_data: Optional[Tuple[bytes, str]] = None
     ) -> str:
-        """Tạo phản hồi chuẩn mực cho Neneka kết hợp Ký ức, Tính cách và Groq LLM"""
+        """Tạo phản hồi chuẩn mực cho Neneka kết hợp Ký ức, Tính cách, Groq LLM hoặc Gemini Vision"""
         # 1. Phát hiện ngôn ngữ và quyền của Đấng Sáng Tạo (Creator)
         lang = personality_engine.detect_language(user_message)
         is_creator = (str(discord_user_id) == str(settings.CREATOR_USER_ID))
@@ -91,24 +93,38 @@ class ChatCog(commands.Cog):
 
         full_system_prompt = f"{base_system_prompt}\n\n{vietnam_context}\n{memory_section}"
 
-        # 6. Gọi Groq LLM
-        messages = [{"role": "system", "content": full_system_prompt}]
-        messages.extend(history_messages)
-        messages.append({"role": "user", "content": user_message})
+        # 6. Gọi Model: Nếu có ảnh thì dùng Gemini Multimodal Vision, nếu không thì dùng Groq LLM
+        if image_data:
+            image_bytes, mime_type = image_data
+            try:
+                reply = await vision_client.analyze_image(
+                    image_bytes=image_bytes,
+                    mime_type=mime_type,
+                    user_prompt=user_message,
+                    system_instruction=full_system_prompt
+                )
+            except Exception as e:
+                logger.error(f"Lỗi khi gọi Gemini Vision: {e}")
+                reply = "*nheo nhẹ đôi mắt tím, quyền trượng Metamorphose khẽ lay động* Fufu... Khúc xạ quang học trên bức ảnh này có chút mờ ảo, ta chưa thể nhìn thấu được. Cậu thử gửi lại xem nào?"
+        else:
+            messages = [{"role": "system", "content": full_system_prompt}]
+            messages.extend(history_messages)
+            messages.append({"role": "user", "content": user_message})
 
-        try:
-            reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
-        except Exception as e:
-            logger.error(f"Lỗi khi gọi Groq LLM: {e}")
-            reply = "*khẽ nhấp ngụm trà, ánh mắt khép hờ* Fufu... Ma lực thực tại vừa có chút nhiễu loạn. Cậu nói lại xem nào?"
+            try:
+                reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
+            except Exception as e:
+                logger.error(f"Lỗi khi gọi Groq LLM: {e}")
+                reply = "*khẽ nhấp ngụm trà, ánh mắt khép hờ* Fufu... Ma lực thực tại vừa có chút nhiễu loạn. Cậu nói lại xem nào?"
 
         # 7. Cộng điểm Bond và cập nhật Ký ức
         await bond_engine.add_bond_points(discord_user_id, points=2, event_type="CONVERSATION")
+        record_user_msg = f"[Hình ảnh] {user_message}" if image_data else user_message
         await memory_engine.record_exchange(
             discord_user_id=discord_user_id,
             username=username,
             channel_id=channel_id,
-            user_message=user_message,
+            user_message=record_user_msg,
             bot_response=reply,
             guild_id=guild_id
         )
@@ -128,6 +144,39 @@ class ChatCog(commands.Cog):
             username=interaction.user.display_name,
             guild_id=str(interaction.guild_id) if interaction.guild_id else None,
             channel_id=str(interaction.channel_id)
+        )
+        await interaction.followup.send(reply)
+
+    @app_commands.command(name="vision", description="👁️ Gửi ảnh để Neneka quan sát và đưa ra nhận xét sắc sảo của Thất Vương")
+    @app_commands.describe(
+        image="Tệp hình ảnh cần Neneka quan sát (PNG, JPG, WebP, GIF)",
+        prompt="Câu hỏi hoặc yêu cầu thêm về bức ảnh (tùy chọn)"
+    )
+    async def cmd_vision(
+        self,
+        interaction: discord.Interaction,
+        image: discord.Attachment,
+        prompt: Optional[str] = None
+    ):
+        if not image.content_type or not image.content_type.startswith("image/"):
+            await interaction.response.send_message("❌ Tệp đính kèm phải là hình ảnh (PNG, JPG, WebP, GIF)!", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        try:
+            img_bytes = await image.read()
+        except Exception as e:
+            await interaction.followup.send("❌ Không thể đọc tệp hình ảnh. Vui lòng thử lại sau.")
+            return
+
+        user_prompt = prompt or "Hãy quan sát kỹ bức ảnh này và nhận xét chi tiết theo phong thái Thất Vương Neneka."
+        reply = await self._generate_neneka_reply(
+            user_message=user_prompt,
+            discord_user_id=str(interaction.user.id),
+            username=interaction.user.display_name,
+            guild_id=str(interaction.guild_id) if interaction.guild_id else None,
+            channel_id=str(interaction.channel_id),
+            image_data=(img_bytes, image.content_type)
         )
         await interaction.followup.send(reply)
 
@@ -443,6 +492,38 @@ class ChatCog(commands.Cog):
             embed.set_footer(text="Open-Meteo Real-Time Weather • Seven Crowns Intelligence")
             await ctx.reply(embed=embed)
 
+    @commands.command(name="vision", aliases=["xemanh", "soianh", "look"])
+    async def pcmd_vision(self, ctx, *, prompt: Optional[str] = None):
+        """Quan sát và nhận xét hình ảnh đính kèm (!n vision [câu hỏi])"""
+        image_att = None
+        if ctx.message.attachments:
+            for att in ctx.message.attachments:
+                if att.content_type and att.content_type.startswith("image/"):
+                    image_att = att
+                    break
+
+        if not image_att:
+            await ctx.reply("Fufu... Cậu cần đính kèm một bức ảnh cùng với lệnh này để ta quan sát nhé.")
+            return
+
+        async with ctx.typing():
+            try:
+                img_bytes = await image_att.read()
+            except Exception:
+                await ctx.reply("❌ Không thể đọc file ảnh vừa gửi.")
+                return
+
+            user_prompt = prompt or "Hãy quan sát kỹ bức ảnh này và nhận xét chi tiết theo phong thái Thất Vương Neneka."
+            reply = await self._generate_neneka_reply(
+                user_message=user_prompt,
+                discord_user_id=str(ctx.author.id),
+                username=ctx.author.display_name,
+                guild_id=str(ctx.guild.id) if ctx.guild else None,
+                channel_id=str(ctx.channel.id),
+                image_data=(img_bytes, image_att.content_type)
+            )
+            await ctx.reply(reply)
+
     @commands.command(name="help")
     async def pcmd_help(self, ctx):
         """Hiển thị hướng dẫn lệnh"""
@@ -452,6 +533,7 @@ class ChatCog(commands.Cog):
             color=0x9b59b6
         )
         embed.add_field(name="`/chat <lời nhắn>` hoặc `!n chat`", value="Trò chuyện trực tiếp cùng Neneka.", inline=False)
+        embed.add_field(name="`/vision <ảnh> [câu hỏi]` hoặc `!n vision`", value="Gửi ảnh để Neneka nhận diện, phân tích và đưa ra nhận xét sắc sảo.", inline=False)
         embed.add_field(name="`/time` hoặc `!n time`", value="Xem giờ, thứ, ngày tháng và buổi hiện tại tại Việt Nam.", inline=False)
         embed.add_field(name="`/weather [nơi]` hoặc `!n weather [nơi]`", value="Tra cứu thời tiết thực tế tại Việt Nam (theo nơi ở của bạn hoặc thành phố chỉ định).", inline=False)
         embed.add_field(name="`/location [nơi]` hoặc `!n location [nơi]`", value="Đặt nơi ở để Neneka cập nhật thời tiết chuẩn xác mà không cần hỏi lại.", inline=False)
@@ -490,7 +572,7 @@ class ChatCog(commands.Cog):
         if ctx.valid:
             return
 
-        # 3. Kiểm tra điều kiện kích hoạt phản hồi
+        # 3. Kiểm tra điều kiện kích hoạt phản hồi & tệp đính kèm hình ảnh
         is_dm = isinstance(message.channel, discord.DMChannel)
         is_mentioned = self.bot.user in message.mentions
         is_reply_to_bot = (
@@ -498,6 +580,13 @@ class ChatCog(commands.Cog):
             isinstance(message.reference.resolved, discord.Message) and
             message.reference.resolved.author.id == self.bot.user.id
         )
+
+        image_attachment = None
+        if message.attachments:
+            for att in message.attachments:
+                if att.content_type and att.content_type.startswith("image/"):
+                    image_attachment = att
+                    break
 
         clean_content = message.clean_content.replace(f"@{self.bot.user.name}", "").strip()
 
@@ -507,7 +596,8 @@ class ChatCog(commands.Cog):
             is_mentioned=is_mentioned,
             is_reply_to_bot=is_reply_to_bot,
             channel_id=message.channel.id,
-            content=clean_content
+            content=clean_content,
+            has_attachments=(image_attachment is not None)
         )
 
         if not should:
@@ -626,14 +716,27 @@ class ChatCog(commands.Cog):
                 await message.reply(embed=embed, view=view)
             return
 
-        # 10. Tạo phản hồi hội thoại thông thường và gửi
+        # 10. Tạo phản hồi hội thoại thông thường và gửi (hỗ trợ cả văn bản và hình ảnh)
         async with message.channel.typing():
+            image_data = None
+            if image_attachment:
+                try:
+                    img_bytes = await image_attachment.read()
+                    image_data = (img_bytes, image_attachment.content_type or "image/png")
+                except Exception as e:
+                    logger.error(f"Lỗi khi đọc file ảnh từ Discord attachment: {e}")
+
+            actual_user_message = clean_content
+            if not actual_user_message and image_data:
+                actual_user_message = "Hãy quan sát kỹ bức ảnh này và đưa ra nhận xét, cảm nghĩ của ngươi theo phong thái quý cô Thất Vương Neneka."
+
             reply_text = await self._generate_neneka_reply(
-                user_message=clean_content,
+                user_message=actual_user_message,
                 discord_user_id=str(message.author.id),
                 username=message.author.display_name,
                 guild_id=str(message.guild.id) if message.guild else None,
-                channel_id=str(message.channel.id)
+                channel_id=str(message.channel.id),
+                image_data=image_data
             )
 
             # Chống phản hồi lặp lại
