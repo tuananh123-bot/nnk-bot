@@ -40,11 +40,6 @@ class Settings(BaseSettings):
                 ids.append(int(raw_s))
         return ids
 
-    # xAI Grok API (https://x.ai / https://console.x.ai)
-    XAI_API_KEY: str = Field(default="", description="xAI Grok API Key (xai-...)")
-    XAI_MODEL: str = Field(default="grok-2-latest", description="Mô hình xAI Grok (grok-2-latest, grok-beta)")
-    XAI_BASE_URL: str = Field(default="https://api.x.ai/v1", description="Base URL của xAI API")
-
     # Groq & LLM
     GROQ_API_KEY: str = Field(default="", description="Groq API Key")
     GROQ_MODEL: str = Field(default="qwen/qwen3.8-27b", description="Mô hình LLM Groq")
