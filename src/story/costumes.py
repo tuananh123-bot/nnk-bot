@@ -45,12 +45,11 @@ class CostumeManager:
     def __init__(self):
         self._user_costumes: Dict[str, str] = {}  # user_id -> variant_key
 
-    def get_current_costume(self, discord_user_id: str) -> Dict[str, Any]:
-        variant_key = self._user_costumes.get(str(discord_user_id), "original")
-        return COSTUME_VARIANTS.get(variant_key, COSTUME_VARIANTS["original"])
-
-    def set_user_costume(self, discord_user_id: str, variant_key: str) -> Optional[Dict[str, Any]]:
-        variant_key = variant_key.lower().strip()
+    def resolve_variant_key(self, key_or_alias: Any) -> Optional[str]:
+        """Chuẩn hóa alias/tên trang phục về key chính xác trong COSTUME_VARIANTS"""
+        if not key_or_alias or not isinstance(key_or_alias, str):
+            return None
+        cleaned = key_or_alias.lower().strip()
         alias_map = {
             "bikini": "summer",
             "swimsuit": "summer",
@@ -69,12 +68,38 @@ class CostumeManager:
             "alpha": "alpha",
             "original": "original",
             "default": "original",
+            "variant_neneka_original": "original",
+            "variant_neneka_new_year": "new_year",
+            "variant_neneka_alpha": "alpha",
+            "variant_neneka_summer": "summer",
         }
-        variant_key = alias_map.get(variant_key, variant_key)
-        if variant_key not in COSTUME_VARIANTS:
+        resolved = alias_map.get(cleaned, cleaned)
+        if resolved in COSTUME_VARIANTS:
+            return resolved
+        for v_key, v_info in COSTUME_VARIANTS.items():
+            if cleaned == v_info.get("id", "").lower() or cleaned in v_info.get("name", "").lower():
+                return v_key
+        return None
+
+    def get_current_costume(self, discord_user_id: str) -> Dict[str, Any]:
+        variant_key = self._user_costumes.get(str(discord_user_id), "original")
+        return COSTUME_VARIANTS.get(variant_key, COSTUME_VARIANTS["original"])
+
+    def get_costume_info(self, variant_or_key: Any) -> Optional[Dict[str, Any]]:
+        """Lấy thông tin chi tiết của trang phục từ dict, key variant, hoặc alias"""
+        if isinstance(variant_or_key, dict):
+            return variant_or_key
+        resolved = self.resolve_variant_key(variant_or_key)
+        if resolved:
+            return COSTUME_VARIANTS.get(resolved)
+        return None
+
+    def set_user_costume(self, discord_user_id: str, variant_key: str) -> Optional[Dict[str, Any]]:
+        resolved = self.resolve_variant_key(variant_key)
+        if not resolved:
             return None
-        self._user_costumes[str(discord_user_id)] = variant_key
-        return COSTUME_VARIANTS[variant_key]
+        self._user_costumes[str(discord_user_id)] = resolved
+        return COSTUME_VARIANTS[resolved]
 
     def list_all_costumes(self) -> List[Dict[str, Any]]:
         return list(COSTUME_VARIANTS.values())

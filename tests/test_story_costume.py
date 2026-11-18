@@ -24,6 +24,43 @@ def test_costume_switching():
     switched_bikini = costume_mgr.set_user_costume(user, "bikini")
     assert switched_bikini["id"] == "variant_neneka_summer"
 
+def test_costume_info_and_prompt_integration():
+    from src.personality.engine import PersonalityEngine
+
+    # Test get_costume_info with various inputs
+    info_summer = costume_mgr.get_costume_info("summer")
+    assert info_summer is not None
+    assert info_summer["id"] == "variant_neneka_summer"
+
+    info_bikini = costume_mgr.get_costume_info("bikini")
+    assert info_bikini is not None
+    assert info_bikini["id"] == "variant_neneka_summer"
+
+    info_dict = costume_mgr.get_costume_info(info_summer)
+    assert info_dict == info_summer
+
+    info_invalid = costume_mgr.get_costume_info("non_existent_costume_123")
+    assert info_invalid is None
+
+    # Test system prompt integration with dict (what chat.py passes)
+    engine = PersonalityEngine()
+    
+    # Original costume dict -> should not inject special costume section
+    original_dict = costume_mgr.get_costume_info("original")
+    prompt_orig = engine.get_system_prompt(costume=original_dict)
+    assert "### TRANG PHỤC HIỆN TẠI:" not in prompt_orig
+
+    # Summer costume dict -> must inject special costume section
+    prompt_summer = engine.get_system_prompt(costume=info_summer)
+    assert "### TRANG PHỤC HIỆN TẠI:" in prompt_summer
+    assert "Đồ Bơi Mùa Hè" in prompt_summer
+    assert "bikini" in prompt_summer.lower()
+
+    # Summer costume string alias -> must also inject correctly
+    prompt_bikini = engine.get_system_prompt(costume="bikini")
+    assert "### TRANG PHỤC HIỆN TẠI:" in prompt_bikini
+    assert "Đồ Bơi Mùa Hè" in prompt_bikini
+
 def test_story_canon_status():
     canon_status = story_engine.verify_canon_status("Sự Xuất Hiện Của Thất Vương")
     assert canon_status == "CANON"

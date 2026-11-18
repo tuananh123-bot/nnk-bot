@@ -1,7 +1,7 @@
 # src/personality/engine.py
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from src.personality.prompts import (
     NENEKA_CANON_BASE_PROMPT,
     NENEKA_VIETNAMESE_STYLE_PROMPT,
@@ -293,7 +293,7 @@ class PersonalityEngine:
         is_creator: bool = False,
         is_max_bond: bool = False,
         is_nsfw: bool = False,
-        costume: str = None
+        costume: Optional[Union[str, Dict[str, Any]]] = None
     ) -> str:
         """Tổng hợp System Prompt đa tầng chuẩn mực cho Neneka"""
         st = self.state
@@ -335,15 +335,24 @@ class PersonalityEngine:
 
         # Costume awareness
         costume_section = ""
-        if costume and costume != "original":
-            from src.story.costumes import costume_mgr
-            info = costume_mgr.get_costume_info(costume)
-            if info:
+        if costume:
+            info = None
+            if isinstance(costume, dict):
+                info = costume
+            elif isinstance(costume, str):
+                from src.story.costumes import costume_mgr
+                info = costume_mgr.get_costume_info(costume)
+
+            # Chỉ chèn thông tin nếu là trang phục đặc biệt (khác original mặc định)
+            if info and info.get("id") != "variant_neneka_original" and info.get("name") != "original":
+                desc = info.get("visual_description") or info.get("description", "")
+                flair = info.get("personality_flair", "")
                 costume_section = (
                     f"\n\n### TRANG PHỤC HIỆN TẠI:\n"
-                    f"- Tên: {info.get('name', costume)}\n"
-                    f"- Mô tả: {info.get('description', '')}\n"
-                    f"- Neneka hãy ý thức về trang phục mình đang mặc và phản ứng phù hợp khi được nhắc đến."
+                    f"- Tên: {info.get('name', 'Trang phục đặc biệt')}\n"
+                    f"- Miêu tả diện mạo: {desc}\n"
+                    f"- Thần thái / Tính cách: {flair}\n"
+                    f"- Chỉ dẫn: Neneka nhận thức rõ bản thân đang mặc trang phục này và phản ứng tự nhiên khi được đối phương nhắc đến."
                 )
 
         user_tag = '[👑 ĐẤNG SÁNG TẠO - CREATOR / MASTER]' if is_creator else ('[💖 NGƯỜI ĐỒNG HÀNH ĐẶC BIỆT NHẤT - CẤP 6 TỐI ĐA]' if is_max_bond else '')
