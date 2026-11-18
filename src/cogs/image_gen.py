@@ -2,11 +2,13 @@
 """
 Cog xử lý tính năng tạo ảnh AI (Text-to-Image).
 Hỗ trợ đa nhà cung cấp:
-1. Uncensored AI API (https://api.uncensored.com) - Model: seedream-v5
-2. AI Horde Distributed Cluster (https://aihorde.net) - SDXL / Pony / Anime
+1. Google Gemini Nano Banana (Flash Image: gemini-2.5-flash-image / gemini-nano-banana-2.1) - Dùng cho tranh thông thường
+2. Uncensored AI API (https://api.uncensored.com) - Model: seedream-v5 - Dùng cho tranh 18+ / Uncensored
+3. AI Horde Distributed Cluster (https://aihorde.net) - SDXL / Pony / Anime - Dự phòng miễn phí không giới hạn
 Hỗ trợ cả Slash command (/imagine, /draw) và tiền tố (!n draw, !n imagine).
 """
 
+import io
 import logging
 from typing import Optional
 import discord
@@ -14,6 +16,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from src.config import settings
+from src.llm.gemini_image_client import gemini_image_client
 from src.llm.horde_client import horde_client
 from src.llm.uncensored_image_client import uncensored_image_client
 from src.cogs.chat import _nsfw_runtime_channels
@@ -40,18 +43,21 @@ class ImageGenCog(commands.Cog):
             return True
         return False
 
-    @app_commands.command(name="imagine", description="🎨 Vẽ tranh và tạo ảnh AI (Uncensored AI seedream-v5 / AI Horde)")
+    @app_commands.command(
+        name="imagine",
+        description="🎨 Vẽ tranh và tạo ảnh AI (Google Nano Banana 🍌 / Uncensored AI / AI Horde)"
+    )
     @app_commands.describe(
         prompt="Mô tả bức tranh bạn muốn Neneka phác họa (tiếng Anh hoặc tiếng Việt)",
         orientation="Định dạng khung hình: portrait (dọc), landscape (ngang), square (vuông)",
         style="Phong cách: anime (mặc định), realistic (chân thực), cinematic (điện ảnh)",
-        provider="Nhà cung cấp: auto (tự động), uncensored (Uncensored AI), horde (AI Horde)"
+        provider="Nhà cung cấp: auto (tự động), nanobanana (Google Nano Banana), uncensored, horde"
     )
     @app_commands.choices(
         orientation=[
-            app_commands.Choice(name="📱 Khung Dọc (Portrait - 512x768)", value="portrait"),
-            app_commands.Choice(name="🖼️ Khung Ngang (Landscape - 768x512)", value="landscape"),
-            app_commands.Choice(name="⏹️ Khung Vuông (Square - 512x512)", value="square"),
+            app_commands.Choice(name="📱 Khung Dọc (Portrait - 9:16)", value="portrait"),
+            app_commands.Choice(name="🖼️ Khung Ngang (Landscape - 16:9)", value="landscape"),
+            app_commands.Choice(name="⏹️ Khung Vuông (Square - 1:1)", value="square"),
         ],
         style=[
             app_commands.Choice(name="🌸 Anime Nghệ Thuật (Mặc định)", value="anime"),
@@ -59,7 +65,8 @@ class ImageGenCog(commands.Cog):
             app_commands.Choice(name="🎬 Điện Ảnh / Cinematic Warm", value="cinematic"),
         ],
         provider=[
-            app_commands.Choice(name="✨ Tự Động (Ưu tiên Uncensored AI -> AI Horde)", value="auto"),
+            app_commands.Choice(name="✨ Tự Động (Tranh thường: Nano Banana 🍌, 18+: Uncensored AI)", value="auto"),
+            app_commands.Choice(name="🍌 Google Nano Banana (Gemini Flash Image)", value="nanobanana"),
             app_commands.Choice(name="🔞 Uncensored AI (seedream-v5)", value="uncensored"),
             app_commands.Choice(name="🌸 AI Horde Cluster (Anime / SDXL / Pony)", value="horde"),
         ]
@@ -102,7 +109,7 @@ class ImageGenCog(commands.Cog):
         """Lệnh tiền tố vẽ ảnh: !n draw <mô tả> hoặc !n imagine <mô tả>."""
         if not prompt:
             await ctx.reply(
-                "Fufu... Cậu muốn ta vẽ gì nào? Hãy miêu tả chi tiết nhé, ví dụ: `!n draw neneka swim in the ocean`."
+                "Fufu... Cậu muốn ta vẽ gì nào? Hãy miêu tả chi tiết nhé, ví dụ: `!n draw neneka enjoying tea in the royal garden`."
             )
             return
 
@@ -127,13 +134,14 @@ class ImageGenCog(commands.Cog):
         style: str = "anime",
         provider: str = "auto",
     ):
+        has_gemini = gemini_image_client.is_available()
         has_uncensored = uncensored_image_client.is_available()
         has_horde = horde_client.is_available()
 
-        if not has_uncensored and not has_horde:
+        if not has_gemini and not has_uncensored and not has_horde:
             msg = (
                 "⚠️ *Chưa có API Key tạo ảnh nào được cấu hình.* "
-                "Vui lòng thiết lập `UNCENSORED_API_KEY` hoặc `AI_HORDE_API_KEY` trong file `.env`."
+                "Vui lòng thiết lập `GEMINI_API_KEY`, `UNCENSORED_API_KEY` hoặc `AI_HORDE_API_KEY` trong file `.env`."
             )
             if hasattr(reply_target, "send"):
                 await reply_target.send(msg)
@@ -165,67 +173,104 @@ class ImageGenCog(commands.Cog):
         fallback_happened = False
         error_reasons = []
 
-        # 1. Thử Uncensored AI (nếu được chọn hoặc ở chế độ auto)
-        if has_uncensored and provider in ("auto", "uncensored"):
+        # 1. Tranh thông thường: Ưu tiên Google Nano Banana (nếu không phải 18+ hoặc khi người dùng chỉ định nanobanana)
+        use_nano_banana = (provider == "nanobanana") or (provider == "auto" and not is_nsfw and has_gemini)
+
+        if use_nano_banana and has_gemini:
             try:
-                result = await uncensored_image_client.generate_image(
+                result = await gemini_image_client.generate_image(
                     prompt=enhanced_prompt,
-                    model=settings.UNCENSORED_IMAGE_MODEL or "seedream-v5",
-                    timeout_seconds=90,
+                    orientation=orientation,
                 )
-                used_provider_name = f"Uncensored AI ({result.get('model', 'seedream-v5')})"
+                used_provider_name = result.get("provider", "Google Nano Banana 🍌")
             except Exception as e:
                 err_str = str(e)
-                logger.warning(f"Uncensored AI image gen thất bại: {err_str}")
-                error_reasons.append(f"Uncensored AI: {err_str}")
-                if provider == "auto" and has_horde:
+                logger.warning(f"Google Nano Banana image gen thất bại: {err_str}")
+                error_reasons.append(f"Google Nano Banana: {err_str}")
+
+                if provider == "auto":
                     fallback_happened = True
-                    logger.info("Đang tự động fallback sang AI Horde Cluster...")
-                elif provider == "uncensored":
-                    # Người dùng chỉ định uncensored mà lỗi thì không fallback ngầm trừ khi cần
-                    err_msg = f"❌ *Uncensored AI không thể hoàn thành yêu cầu:* `{err_str}`"
-                    if "credit" in err_str.lower():
-                        err_msg += "\n💡 *Gợi ý:* Tài khoản Uncensored AI hiện chưa có đủ credit. Bạn có thể dùng `/imagine provider:horde` hoặc `!n draw` để dùng cluster AI Horde miễn phí!"
+                    logger.info("Nano Banana không khả dụng, đang tự động fallback sang Horde / Uncensored AI...")
+                elif provider == "nanobanana":
+                    err_msg = f"❌ *Google Nano Banana gặp lỗi:* `{err_str}`"
+                    if "ResourceExhausted" in err_str or "quota" in err_str.lower():
+                        err_msg += "\n💡 *Gợi ý:* Hạn mức Nano Banana trong ngày đã tạm hết. Bạn có thể dùng `/imagine provider:horde` để vẽ qua AI Horde hoàn toàn miễn phí!"
                     if hasattr(reply_target, "send"):
                         await reply_target.send(err_msg)
                     else:
                         await reply_target.reply(err_msg)
                     return
 
-        # 2. Thử AI Horde (nếu result chưa có và được phép dùng)
-        if not result and has_horde and provider in ("auto", "horde"):
-            try:
-                result = await horde_client.generate_image(
-                    prompt=enhanced_prompt,
-                    width=width,
-                    height=height,
-                    is_nsfw=is_nsfw,
-                    timeout_seconds=120,
-                )
-                used_provider_name = f"AI Horde ({result.get('model', 'Horde Diffusion')})"
-            except TimeoutError:
-                err_msg = (
-                    "*khẽ đặt tách trà xuống, ánh mắt có chút tiếc nuối* Fufu... Các thợ vẽ phân tán trên mạng lưới AI Horde "
-                    "đang bận rộn xử lý hàng đợi quá đông nên lượt vẽ này bị quá hạn. Cậu chờ một chút rồi thử lại xem sao nhé?"
-                )
-                if hasattr(reply_target, "send"):
-                    await reply_target.send(err_msg)
-                else:
-                    await reply_target.reply(err_msg)
-                return
-            except Exception as e:
-                logger.error(f"Lỗi khi tạo ảnh qua AI Horde: {e}")
-                error_reasons.append(f"AI Horde: {e}")
+        # 2. Tranh 18+ / Uncensored AI: Nếu là kênh NSFW hoặc người dùng chỉ định uncensored, hoặc auto fallback
+        if not result and has_uncensored:
+            try_uncensored = (provider == "uncensored") or (provider == "auto" and (is_nsfw or fallback_happened or not has_gemini))
+            if try_uncensored:
+                try:
+                    result = await uncensored_image_client.generate_image(
+                        prompt=enhanced_prompt,
+                        model=settings.UNCENSORED_IMAGE_MODEL or "seedream-v5",
+                        timeout_seconds=90,
+                    )
+                    used_provider_name = f"Uncensored AI ({result.get('model', 'seedream-v5')})"
+                except Exception as e:
+                    err_str = str(e)
+                    logger.warning(f"Uncensored AI image gen thất bại: {err_str}")
+                    error_reasons.append(f"Uncensored AI: {err_str}")
+                    if provider == "auto" and has_horde:
+                        fallback_happened = True
+                        logger.info("Đang tự động fallback sang AI Horde Cluster...")
+                    elif provider == "uncensored":
+                        err_msg = f"❌ *Uncensored AI không thể hoàn thành yêu cầu:* `{err_str}`"
+                        if "credit" in err_str.lower():
+                            err_msg += "\n💡 *Gợi ý:* Tài khoản Uncensored AI hiện chưa có đủ credit. Bạn có thể dùng `/imagine provider:horde` hoặc `!n draw` để dùng cluster AI Horde miễn phí!"
+                        if hasattr(reply_target, "send"):
+                            await reply_target.send(err_msg)
+                        else:
+                            await reply_target.reply(err_msg)
+                        return
 
-        # 3. Kết quả thành công
-        if result and result.get("img_url"):
-            img_url = result["img_url"]
+        # 3. AI Horde (Dự phòng miễn phí cuối cùng hoặc khi người dùng chỉ định horde)
+        if not result and has_horde:
+            try_horde = (provider == "horde") or (provider == "auto") or fallback_happened
+            if try_horde:
+                try:
+                    result = await horde_client.generate_image(
+                        prompt=enhanced_prompt,
+                        width=width,
+                        height=height,
+                        is_nsfw=is_nsfw,
+                        timeout_seconds=120,
+                    )
+                    used_provider_name = f"AI Horde ({result.get('model', 'Horde Diffusion')})"
+                except TimeoutError:
+                    err_msg = (
+                        "*khẽ đặt tách trà xuống, ánh mắt có chút tiếc nuối* Fufu... Các thợ vẽ phân tán trên mạng lưới AI Horde "
+                        "đang bận rộn xử lý hàng đợi quá đông nên lượt vẽ này bị quá hạn. Cậu chờ một chút rồi thử lại xem sao nhé?"
+                    )
+                    if hasattr(reply_target, "send"):
+                        await reply_target.send(err_msg)
+                    else:
+                        await reply_target.reply(err_msg)
+                    return
+                except Exception as e:
+                    logger.error(f"Lỗi khi tạo ảnh qua AI Horde: {e}")
+                    error_reasons.append(f"AI Horde: {e}")
+
+        # 4. Kết quả thành công (Hỗ trợ cả file attachment bytes và image URL)
+        if result and (result.get("image_bytes") or result.get("img_url")):
+            file = None
             embed = discord.Embed(
                 title="✨ Ma Lực Thực Tại • Phác Họa Hoàn Tất",
                 description=f"*{author.mention}, ảo ảnh mà cậu mong ước đã được dệt thành hình:*\n> **Prompt:** {prompt}",
                 color=0x9b59b6,
             )
-            embed.set_image(url=img_url)
+
+            if result.get("image_bytes"):
+                file = discord.File(io.BytesIO(result["image_bytes"]), filename="neneka_art.png")
+                embed.set_image(url="attachment://neneka_art.png")
+            elif result.get("img_url"):
+                embed.set_image(url=result["img_url"])
+
             embed.add_field(name="📐 Kích Thước", value=f"`{width}x{height}` ({orientation})", inline=True)
             embed.add_field(name="🎨 Worker / Model", value=f"`{result.get('model', 'AI Model')}`", inline=True)
             if result.get("seed"):
@@ -233,16 +278,20 @@ class ImageGenCog(commands.Cog):
 
             footer_text = f"Seven Crowns Metamorphose Art • Powered by {used_provider_name}"
             if fallback_happened:
-                footer_text += " (Đã chuyển tiếp từ Uncensored AI do thiếu credit)"
+                footer_text += " (Đã tự động chuyển đổi sang kênh dự phòng)"
             embed.set_footer(text=footer_text)
 
+            send_kwargs = {"embed": embed}
+            if file:
+                send_kwargs["file"] = file
+
             if hasattr(reply_target, "send"):
-                await reply_target.send(embed=embed)
+                await reply_target.send(**send_kwargs)
             else:
-                await reply_target.reply(embed=embed)
+                await reply_target.reply(**send_kwargs)
             return
 
-        # 4. Cả hai provider đều thất bại
+        # 5. Tất cả provider đều thất bại
         joined_errors = " | ".join(error_reasons) if error_reasons else "Không nhận được phản hồi hợp lệ."
         err_msg = f"❌ *Ma lực bị phân tán khi tạo ảnh:* `{joined_errors}`"
         if hasattr(reply_target, "send"):

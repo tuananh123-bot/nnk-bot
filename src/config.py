@@ -78,8 +78,12 @@ class Settings(BaseSettings):
     GROQ_TIMEOUT_SECONDS: float = Field(default=30.0)
     GROQ_MAX_RETRIES: int = Field(default=3)
 
-    # Gemini (Secondary / Voice design backup)
+    # Gemini (Vision & Nano Banana Image Generation)
     GEMINI_API_KEY: Optional[str] = Field(default=None)
+    GEMINI_IMAGE_MODEL: str = Field(
+        default="gemini-2.5-flash-image",
+        description="Model Google Gemini Nano Banana vẽ tranh thông thường (gemini-2.5-flash-image)"
+    )
 
     # Database
     DATABASE_URL: str = Field(
