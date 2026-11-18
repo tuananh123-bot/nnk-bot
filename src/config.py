@@ -20,11 +20,15 @@ class Settings(BaseSettings):
     def max_bond_user_id_list(self) -> List[str]:
         return [uid.strip() for uid in self.MAX_BOND_USER_IDS.split(",") if uid.strip()]
 
-    # OpenRouter
-    OPENROUTER_API_KEY: str = Field(default="", description="OpenRouter API Key (sk-or-...)")
+    # OpenRouter / Custom OpenAI-compatible / Local LLM (LM Studio, Ollama...)
+    OPENROUTER_API_KEY: str = Field(default="", description="OpenRouter API Key (sk-or-...) hoặc Local key")
     OPENROUTER_DEFAULT_MODEL: str = Field(
-        default="nousresearch/hermes-3-llama-3.1-405b:nitro",
-        description="Model mặc định cho OpenRouter"
+        default="sao10k/l3.3-euryale-70b",
+        description="Model mặc định cho OpenRouter / Local LLM (uncensored, NSFW-capable)"
+    )
+    OPENROUTER_BASE_URL: str = Field(
+        default="https://openrouter.ai/api/v1",
+        description="Base URL cho API phụ (mặc định OpenRouter, có thể đổi thành http://localhost:1235/v1 cho LM Studio)"
     )
 
     # NSFW mode (per-guild / per-channel được lưu runtime; flag global này bật/tắt toàn bộ tính năng)

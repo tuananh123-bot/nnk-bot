@@ -15,35 +15,37 @@ logger = logging.getLogger("neneka.openrouter")
 class OpenRouterClient:
     """Client gọi OpenRouter API (OpenAI-compatible)."""
 
-    # Model mặc định – hỗ trợ nội dung mature, vẫn thông minh & sáng tạo
-    DEFAULT_MODEL = "nousresearch/hermes-3-llama-3.1-405b:nitro"
-    # Danh sách fallback nếu model mặc định bận / không khả dụng
+    # Model mặc định - Uncensored / roleplay NSFW (không bị từ chối cảnh người lớn)
+    DEFAULT_MODEL = "sao10k/l3.3-euryale-70b"
+    # Danh sách fallback - đều là model uncensored / NSFW-friendly
     FALLBACK_MODELS = [
-        "nousresearch/hermes-3-llama-3.1-405b:nitro",
+        "sao10k/l3.3-euryale-70b",
+        "eva-unit-01/eva-llama-3.33-70b",
+        "anthracite-org/magnum-v4-72b",
         "mistralai/mistral-nemo",
-        "meta-llama/llama-3.1-8b-instruct:free",
     ]
     BASE_URL = "https://openrouter.ai/api/v1"
 
-    def __init__(self, api_key: str, model: Optional[str] = None):
+    def __init__(self, api_key: str, model: Optional[str] = None, base_url: Optional[str] = None):
         self.api_key = api_key
         self.model = model or self.DEFAULT_MODEL
+        self.base_url = base_url or self.BASE_URL
         self._client = None  # lazy init
 
     def _get_client(self):
-        """Lazy-init openai client trỏ vào OpenRouter."""
+        """Lazy-init openai client trỏ vào OpenRouter hoặc Local LLM."""
         if self._client is None:
             try:
                 from openai import AsyncOpenAI  # openai >= 1.x
                 self._client = AsyncOpenAI(
-                    api_key=self.api_key,
-                    base_url=self.BASE_URL,
+                    api_key=self.api_key or "not-needed",
+                    base_url=self.base_url,
                 )
             except ImportError:
                 # Fallback: openai < 1.x (v0.28)
                 import openai as _oa
-                _oa.api_key = self.api_key
-                _oa.api_base = self.BASE_URL
+                _oa.api_key = self.api_key or "not-needed"
+                _oa.api_base = self.base_url
                 self._client = "legacy"
         return self._client
 
@@ -129,8 +131,10 @@ class OpenRouterClient:
         return response["choices"][0]["message"]["content"].strip()
 
     def is_available(self) -> bool:
-        """Kiểm tra xem API key có được cấu hình không."""
-        return bool(self.api_key and self.api_key.startswith("sk-or-"))
+        """Kiểm tra xem API key có được cấu hình hoặc có local base_url không."""
+        if "localhost" in self.base_url or "127.0.0.1" in self.base_url:
+            return True
+        return bool(self.api_key and (self.api_key.startswith("sk-or-") or self.api_key.startswith("sk-")))
 
 
 # --- Singleton helper ---
@@ -139,17 +143,19 @@ _instance: Optional[OpenRouterClient] = None
 
 def get_openrouter_client() -> Optional[OpenRouterClient]:
     """
-    Trả về singleton OpenRouterClient nếu API key được cấu hình.
-    Trả về None nếu chưa có key.
+    Trả về singleton OpenRouterClient nếu API key hoặc Local base_url được cấu hình.
+    Trả về None nếu chưa có key/local url.
     """
     global _instance
     if _instance is None:
         try:
             from src.config import settings
-            key = settings.OPENROUTER_API_KEY
+            key = getattr(settings, "OPENROUTER_API_KEY", "")
             model = getattr(settings, "OPENROUTER_DEFAULT_MODEL", None)
-            if key:
-                _instance = OpenRouterClient(api_key=key, model=model)
+            base_url = getattr(settings, "OPENROUTER_BASE_URL", None)
+            is_local = bool(base_url and ("localhost" in base_url or "127.0.0.1" in base_url))
+            if key or is_local:
+                _instance = OpenRouterClient(api_key=key or "not-needed", model=model, base_url=base_url)
         except Exception as e:
             logger.warning(f"Không thể khởi tạo OpenRouterClient: {e}")
     return _instance
