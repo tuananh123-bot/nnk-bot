@@ -20,6 +20,12 @@ def test_character_personality_compliment():
     assert engine.state.emotional_state == "slight_tsundere"
     assert engine.state.affection > 150
 
+def test_character_personality_sensual_soft():
+    engine = PersonalityEngine()
+    engine.update_from_interaction("hôn neneka")
+    assert engine.state.arousal > 10
+    assert engine.state.lust > 10
+
 def test_system_prompt_multilingual():
     engine = PersonalityEngine()
     prompt_vi = engine.get_system_prompt("vi", "Kishi")

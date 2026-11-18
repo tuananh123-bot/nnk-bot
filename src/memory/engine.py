@@ -30,6 +30,23 @@ class MemoryEngine:
         self.max_tokens = settings.MAX_MEMORY_TOKENS
         self.short_term_limit = settings.SHORT_TERM_MEMORY_LIMIT
 
+    @staticmethod
+    def is_valid_dialogue_turn(user_text: str, bot_text: str) -> bool:
+        """Kiểm tra xem lượt thoại có hoàn chỉnh và hợp lệ không để tránh ô nhiễm context."""
+        if not user_text or not bot_text:
+            return False
+        bot_s = bot_text.strip()
+        # Tránh các câu trả lời bị đứt đoạn, cụt lủn hoặc lặp từ lỗi
+        if len(bot_s) < 15:
+            return False
+        # Cắt các đuôi cụt lủn do stop token hoặc lỗi mô hình
+        if bot_s.endswith(("\nA", "\nAra", "\nChà", "\nHửm", " A", " Ara", " Chà")):
+            return False
+        clean_words = [w for w in re.split(r'[\s.,!?…*~]+', bot_s.lower()) if w]
+        if clean_words and all(w in {"hửm", "ara", "fufu", "chà", "a", "ừm"} for w in clean_words):
+            return False
+        return True
+
     async def get_or_create_user(
         self,
         session: AsyncSession,
@@ -93,18 +110,28 @@ class MemoryEngine:
                 session.add(conv)
                 await session.flush()
 
-            # 2. Thêm tin nhắn
+            # 2. Làm sạch câu trả lời của bot trước khi lưu để chống rác bộ nhớ
+            clean_bot = bot_response.strip()
+            lines = clean_bot.split("\n")
+            while len(lines) > 1 and lines[-1].strip().lower() in {"a", "ara", "chà", "hửm", "hửm...?", "ara ara", "chà chà"}:
+                lines.pop()
+            clean_bot = "\n".join(lines).strip()
+            if not clean_bot:
+                clean_bot = bot_response
+
+            # 3. Thêm tin nhắn
             msg_user = Message(conversation_id=conv.id, role="user", content=user_message)
-            msg_bot = Message(conversation_id=conv.id, role="assistant", content=bot_response)
+            msg_bot = Message(conversation_id=conv.id, role="assistant", content=clean_bot)
             session.add_all([msg_user, msg_bot])
 
-            # 3. Lưu Short-term memory
-            stm = ShortTermMemory(
-                user_id=user.id,
-                channel_id=str(channel_id),
-                context_data=json.dumps({"user": user_message, "neneka": bot_response}, ensure_ascii=False)
-            )
-            session.add(stm)
+            # 4. Lưu Short-term memory (chỉ lưu nếu nội dung bot hợp lệ)
+            if self.is_valid_dialogue_turn(user_message, clean_bot):
+                stm = ShortTermMemory(
+                    user_id=user.id,
+                    channel_id=str(channel_id),
+                    context_data=json.dumps({"user": user_message, "neneka": clean_bot}, ensure_ascii=False)
+                )
+                session.add(stm)
 
             # 4. Tăng interaction count trong Relationship Memory
             rel_stmt = select(RelationshipMemory).where(RelationshipMemory.user_id == user.id)
@@ -247,7 +274,10 @@ class MemoryEngine:
             for stm in recent_stms:
                 try:
                     data = json.loads(stm.context_data)
-                    recent_history.append({"user": data["user"], "neneka": data["neneka"]})
+                    u_text = data.get("user", "")
+                    b_text = data.get("neneka", "")
+                    if self.is_valid_dialogue_turn(u_text, b_text):
+                        recent_history.append({"user": u_text, "neneka": b_text})
                 except Exception:
                     continue
 
@@ -257,6 +287,22 @@ class MemoryEngine:
                 "relevant_facts": relevant_facts,
                 "recent_history": recent_history
             }
+
+    async def clear_short_term_memory(self, discord_user_id: str, channel_id: Optional[str] = None) -> int:
+        """Xóa sạch bộ nhớ ngắn hạn của người dùng (trong kênh hoặc toàn bộ)"""
+        async for session in db_manager.get_session():
+            stmt = select(User).where(User.discord_user_id == str(discord_user_id))
+            user = (await session.execute(stmt)).scalar_one_or_none()
+            if not user:
+                return 0
+
+            del_stmt = delete(ShortTermMemory).where(ShortTermMemory.user_id == user.id)
+            if channel_id:
+                del_stmt = del_stmt.where(ShortTermMemory.channel_id == str(channel_id))
+
+            res = await session.execute(del_stmt)
+            await session.commit()
+            return res.rowcount or 0
 
     async def get_user_memories(self, discord_user_id: str) -> List[Dict[str, Any]]:
         """Lấy toàn bộ danh sách ký ức dài hạn để người dùng kiểm tra (/memory)"""

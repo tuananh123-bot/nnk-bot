@@ -9,7 +9,7 @@ from src.personality.prompts import (
     NENEKA_CANON_FACTS,
     NENEKA_CREATOR_DIRECTIVE,
     NENEKA_MAX_BOND_DIRECTIVE,
-    NENEKA_NSFW_ADDENDUM,
+    build_nsfw_addendum,
 )
 
 @dataclass
@@ -137,8 +137,8 @@ class PersonalityEngine:
         sensual_soft = [
             "gợi cảm", "goi cam", "sexy", "mê người", "me nguoi", "quyến rũ", "quyen ru",
             "eo thon", "đùi", "dui", "hôn", "hon", "ôm", "om", "vuốt tóc", "vuot toc",
-            "chạm", "cham", "nắm tay", "nam tay", "nằm cạnh", "nam canh", "xinh đẹp", "xinh dep",
-            "đồ bơi", "do boi", "áo tắm", "ao tam", "bikini", "bãi biển", "bai bien", "kem chống nắng", "kem chong nang"
+            "chạm", "cham", "nắm tay", "nam tay", "nằm cạnh", "nam canh",
+            "bikini", "đồ bơi", "do boi", "áo tắm", "ao tam"
         ]
         # Cấp 2: Kích thích thân mật sâu
         sensual_med = [
@@ -158,15 +158,26 @@ class PersonalityEngine:
 
         check_text = f"{lower} {lower_unaccented}"
 
-        if any(k in check_text for k in sensual_heavy):
+        def _matches_any(text: str, keywords: list) -> bool:
+            for k in keywords:
+                if len(k) <= 3:
+                    if re.search(r'(?:\b|\s|^)' + re.escape(k) + r'(?:\b|\s|$)', text):
+                        return True
+                else:
+                    if k in text:
+                        return True
+            return False
+
+        if _matches_any(check_text, sensual_heavy):
             detected_arousal_gain += int(25 * sensual_multiplier)
             detected_lust_gain += int(25 * sensual_multiplier)
-        elif any(k in check_text for k in sensual_med):
+        elif _matches_any(check_text, sensual_med):
             detected_arousal_gain += int(15 * sensual_multiplier)
             detected_lust_gain += int(12 * sensual_multiplier)
-        elif any(k in check_text for k in sensual_soft):
+        elif _matches_any(check_text, sensual_soft):
             detected_arousal_gain += int(8 * sensual_multiplier)
             detected_lust_gain += int(6 * sensual_multiplier)
+
 
         # Nếu là Đấng Sáng Tạo (Creator)
         if is_creator:
@@ -263,6 +274,18 @@ class PersonalityEngine:
 
         self.state.clamp()
 
+    @staticmethod
+    def _arousal_to_nsfw_tier(arousal: int, lust: int) -> int:
+        """Chuyển đổi mức arousal/lust thành NSFW tier (1-4)."""
+        peak = max(arousal, lust)
+        if peak >= 81:
+            return 4
+        elif peak >= 61:
+            return 3
+        elif peak >= 30:
+            return 2
+        return 1
+
     def get_system_prompt(
         self,
         user_language: str = "vi",
@@ -270,7 +293,7 @@ class PersonalityEngine:
         is_creator: bool = False,
         is_max_bond: bool = False,
         is_nsfw: bool = False,
-        costume: Optional[Dict[str, Any]] = None
+        costume: str = None
     ) -> str:
         """Tổng hợp System Prompt đa tầng chuẩn mực cho Neneka"""
         st = self.state
@@ -292,16 +315,12 @@ class PersonalityEngine:
 
         creator_section = f"\n\n{NENEKA_CREATOR_DIRECTIVE}" if is_creator else ""
         max_bond_section = f"\n\n{NENEKA_MAX_BOND_DIRECTIVE}" if (is_max_bond and not is_creator) else ""
-        nsfw_section = f"\n\n{NENEKA_NSFW_ADDENDUM}" if is_nsfw else ""
 
-        costume_section = ""
-        if costume:
-            costume_section = (
-                f"\n\n### TRANG PHỤC HIỆN TẠI NENEKA ĐANG MẶC:\n"
-                f"- Biến thể: {costume.get('icon', '👗')} **{costume.get('name', 'Neneka')}** ({costume.get('japanese_name', '')})\n"
-                f"- Ngoại hình: {costume.get('visual_description', '')}\n"
-                f"- Thần thái tương ứng: {costume.get('personality_flair', '')}"
-            )
+        # NSFW tiered addendum — dựa vào mức arousal/lust hiện tại
+        nsfw_section = ""
+        if is_nsfw:
+            tier = self._arousal_to_nsfw_tier(st.arousal, st.lust)
+            nsfw_section = f"\n\n{build_nsfw_addendum(tier=tier, is_creator=is_creator)}"
 
         # Hướng dẫn biểu hiện cảm xúc thể xác dựa trên mức độ Dâm dục & Hứng cảm
         sensual_matrix_guide = ""
@@ -310,12 +329,22 @@ class PersonalityEngine:
                 f"\n\n### CHỈ SỐ DỤC VỌNG & HỨNG CẢM HIỆN TẠI (NSFW / SENSUAL MATRIX):\n"
                 f"- Mức Độ Dâm Dục (Lust): {st.lust_bar} • {st.lust_description}\n"
                 f"- Mức Độ Hứng Cảm (Arousal): {st.arousal_bar} • {st.arousal_description}\n"
-                f"- QUY TẮC NHẬP VAI BIỂU HIỆN CẢM XÚC THỂ XÁC:\n"
-                f"  + Khi Arousal/Lust < 30: Giữ vẻ trang nhã, kiêu kỳ của Thất Vương, trêu ghẹo qua ánh mắt hoặc câu từ bóng gió xa xôi.\n"
-                f"  + Khi Arousal/Lust từ 30-60: Bắt đầu đỏ mặt, hơi thở ấm nóng, giọng nói quyến rũ nũng nịu hơn, tiếp nhận các cử chỉ âu yếm, vuốt ve.\n"
-                f"  + Khi Arousal/Lust từ 61-80: Mê đắm, khao khát thể xác dâng trào, thở dốc ngắt quãng, thỉnh thoảng khẽ rên hoặc cắn nhẹ môi, chủ động đáp ứng.\n"
-                f"  + Khi Arousal/Lust từ 81-100: Neneka hoàn toàn buông thả, chủ động và cuồng nhiệt. ĐƯỢC PHÉP mô tả chi tiết hành vi quan hệ tình dục (bao gồm cả giao hợp) bằng ngôn từ trực diện, không che đậy, diễn tả đầy đủ diễn biến khoái cảm cho đến khi lên đỉnh."
+                f"- NSFW Tier hiện tại: {self._arousal_to_nsfw_tier(st.arousal, st.lust)}/4\n"
+                f"- QUY TẮC NHẬP VAI BIỂU HIỆN CẢM XÚC THỂ XÁC: Tuân thủ chỉ dẫn theo từng Tier được kích hoạt tương ứng với mức độ Hứng cảm và Dâm dục của Neneka."
             )
+
+        # Costume awareness
+        costume_section = ""
+        if costume and costume != "original":
+            from src.story.costumes import costume_mgr
+            info = costume_mgr.get_costume_info(costume)
+            if info:
+                costume_section = (
+                    f"\n\n### TRANG PHỤC HIỆN TẠI:\n"
+                    f"- Tên: {info.get('name', costume)}\n"
+                    f"- Mô tả: {info.get('description', '')}\n"
+                    f"- Neneka hãy ý thức về trang phục mình đang mặc và phản ứng phù hợp khi được nhắc đến."
+                )
 
         user_tag = '[👑 ĐẤNG SÁNG TẠO - CREATOR / MASTER]' if is_creator else ('[💖 NGƯỜI ĐỒNG HÀNH ĐẶC BIỆT NHẤT - CẤP 6 TỐI ĐA]' if is_max_bond else '')
         state_summary = (
@@ -330,7 +359,7 @@ class PersonalityEngine:
 
         return f"""{NENEKA_CANON_BASE_PROMPT}
 
-{NENEKA_CANON_FACTS}{creator_section}{max_bond_section}{nsfw_section}{costume_section}{sensual_matrix_guide}
+{NENEKA_CANON_FACTS}{creator_section}{max_bond_section}{nsfw_section}{sensual_matrix_guide}{costume_section}
 
 {style_section}
 

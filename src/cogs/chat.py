@@ -36,6 +36,26 @@ personality_engine = PersonalityEngine()
 memory_engine = MemoryEngine(groq_client=groq_client)
 bond_engine = BondEngine()
 
+def sanitize_neneka_reply(reply: str) -> str:
+    """Loại bỏ các đoạn kết thúc đứt đoạn hoặc từ cảm thán bị cắt cụt do model lỗi."""
+    if not reply:
+        return reply
+    text = reply.strip()
+    # Loại bỏ dòng đuôi cụt lủn như "\nA", "\nAra", "\nChà", "\nHửm"
+    lines = text.split("\n")
+    while len(lines) > 1:
+        last_line = lines[-1].strip().lower()
+        if last_line in {"a", "ara", "chà", "hửm", "hửm...?", "ara ara", "chà chà"}:
+            lines.pop()
+        else:
+            break
+    sanitized = "\n".join(lines).strip()
+    # Nếu câu bị cụt lủn hoặc chỉ gồm các từ cảm thán đơn lẻ
+    clean_words = [w for w in re.split(r'[\s.,!?…*~]+', sanitized.lower()) if w]
+    if len(sanitized) < 15 or (clean_words and all(w in {"hửm", "ara", "fufu", "chà", "a", "ừm"} for w in clean_words)):
+        sanitized = "*mỉm cười điềm đạm, đôi mắt tím ánh lên nét dịu dàng* Fufu... Ta đang lắng nghe đây. Cậu có điều gì muốn chia sẻ cùng ta sao?"
+    return sanitized
+
 class ChatCog(commands.Cog):
     """Xử lý hội thoại tự nhiên, lệnh chat slash command và các lệnh tiền tố kế thừa (!n, n!)"""
     def __init__(self, bot):
@@ -152,6 +172,9 @@ class ChatCog(commands.Cog):
                 except Exception as e2:
                     logger.error(f"Tất cả LLM đều thất bại: {e2}")
                     reply = "*khẽ nhấp ngụm trà, ánh mắt khép hờ* Fufu... Ma lực thực tại vừa có chút nhiễu loạn. Cậu nói lại xem nào?"
+
+        # 6.5 Làm sạch phản hồi, chống đứt đoạn hoặc ngắt dòng cụt lủn do model
+        reply = sanitize_neneka_reply(reply)
 
         # 7. Cộng điểm Bond và cập nhật Ký ức
         await bond_engine.add_bond_points(discord_user_id, points=2, event_type="CONVERSATION")

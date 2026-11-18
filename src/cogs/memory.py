@@ -125,6 +125,37 @@ class MemoryCog(commands.Cog):
         else:
             await interaction.response.send_message("❌ Không tìm thấy ký ức nào phù hợp để xóa.", ephemeral=True)
 
+    @app_commands.command(name="reset", description="🧹 Làm mới ngữ cảnh hội thoại gần đây (xóa sạch ký ức ngắn hạn)")
+    async def cmd_reset(self, interaction: discord.Interaction):
+        deleted = await memory_engine.clear_short_term_memory(str(interaction.user.id))
+        embed = discord.Embed(
+            title="🧹 Đã Làm Mới Ngữ Cảnh Hội Thoại",
+            description=(
+                f"✨ *thu hồi quyền trượng Metamorphose, khẽ mỉm cười điềm đạm*\n"
+                f"Fufu... Ta đã làm sạch **{deleted}** lượt ngữ cảnh trò chuyện ngắn hạn gần đây của {interaction.user.mention}.\n"
+                f"Ký ức dài hạn và mức hảo cảm vẫn được giữ nguyên vẹn. Chúng ta có thể bắt đầu lại chủ đề mới rồi nhé."
+            ),
+            color=0x9b59b6
+        )
+        embed.set_footer(text="Seven Crowns Memory Management • Princess Connect! Re:Dive")
+        await interaction.response.send_message(embed=embed)
+
+    @commands.command(name="reset", aliases=["clear", "lammoi", "clean"])
+    async def pcmd_reset(self, ctx: commands.Context):
+        """Lệnh !n reset hoặc !n clear để làm mới ngữ cảnh trò chuyện ngắn hạn"""
+        deleted = await memory_engine.clear_short_term_memory(str(ctx.author.id))
+        embed = discord.Embed(
+            title="🧹 Đã Làm Mới Ngữ Cảnh Hội Thoại",
+            description=(
+                f"✨ *thu hồi quyền trượng Metamorphose, khẽ mỉm cười điềm đạm*\n"
+                f"Fufu... Ta đã làm sạch **{deleted}** lượt ngữ cảnh trò chuyện ngắn hạn gần đây của {ctx.author.mention}.\n"
+                f"Ký ức dài hạn và mức hảo cảm vẫn được giữ nguyên vẹn. Chúng ta có thể bắt đầu một câu chuyện mới rồi nhé."
+            ),
+            color=0x9b59b6
+        )
+        embed.set_footer(text="Seven Crowns Memory Management • Princess Connect! Re:Dive")
+        await ctx.reply(embed=embed)
+
 async def setup(bot):
     await bot.add_cog(MemoryCog(bot))
 

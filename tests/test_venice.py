@@ -120,41 +120,75 @@ class TestNSFWPrompt:
         assert len(NENEKA_NSFW_ADDENDUM) > 50
 
     def test_nsfw_addendum_has_safety_clause(self):
-        """NSFW addendum phải có điều khoản bảo vệ trẻ em / an toàn."""
-        from src.personality.prompts import NENEKA_NSFW_ADDENDUM
+        """NSFW addendum (tất cả các tier) phải có điều khoản bảo vệ trẻ em / an toàn."""
+        from src.personality.prompts import build_nsfw_addendum, NSFW_CORE
         safety_keywords = ["trẻ em", "pháp luật", "TUYỆT ĐỐI"]
-        assert any(kw in NENEKA_NSFW_ADDENDUM for kw in safety_keywords), \
-            "NSFW addendum thiếu điều khoản bảo vệ / giới hạn an toàn"
+        # Kiểm tra NSFW_CORE (lõi luôn bật)
+        assert any(kw in NSFW_CORE for kw in safety_keywords), \
+            "NSFW_CORE thiếu điều khoản bảo vệ / giới hạn an toàn"
+        # Kiểm tra mọi tier đều chứa safety clause từ NSFW_CORE
+        for tier in range(1, 5):
+            addendum = build_nsfw_addendum(tier=tier)
+            assert any(kw in addendum for kw in safety_keywords), \
+                f"NSFW tier {tier} thiếu điều khoản bảo vệ"
 
     def test_nsfw_addendum_preserves_neneka_character(self):
         """NSFW addendum phải duy trì phong cách Neneka."""
-        from src.personality.prompts import NENEKA_NSFW_ADDENDUM
-        style_keywords = ["Neneka", "Thất Vương", "tao nhã", "phong cách"]
-        assert any(kw in NENEKA_NSFW_ADDENDUM for kw in style_keywords)
+        from src.personality.prompts import build_nsfw_addendum
+        for tier in range(1, 5):
+            addendum = build_nsfw_addendum(tier=tier)
+            style_keywords = ["Thất Vương", "Sheffy-sama", "cinematic", "tao nhã"]
+            assert any(kw in addendum for kw in style_keywords), \
+                f"NSFW tier {tier} thiếu phong cách Neneka"
 
     def test_get_system_prompt_with_nsfw(self):
-        """get_system_prompt(is_nsfw=True) phải chứa NSFW addendum."""
+        """get_system_prompt(is_nsfw=True) phải chứa NSFW CORE."""
         from src.personality.engine import PersonalityEngine
-        from src.personality.prompts import NENEKA_NSFW_ADDENDUM
+        from src.personality.prompts import NSFW_CORE
         engine = PersonalityEngine()
         prompt = engine.get_system_prompt(is_nsfw=True)
-        assert NENEKA_NSFW_ADDENDUM in prompt
+        assert "MATURE CONTENT UNLOCKED" in prompt
+        assert "cinematic softcore" in prompt
 
     def test_get_system_prompt_without_nsfw(self):
         """get_system_prompt(is_nsfw=False) KHÔNG chứa NSFW addendum."""
         from src.personality.engine import PersonalityEngine
-        from src.personality.prompts import NENEKA_NSFW_ADDENDUM
         engine = PersonalityEngine()
         prompt = engine.get_system_prompt(is_nsfw=False)
-        assert NENEKA_NSFW_ADDENDUM not in prompt
+        assert "MATURE CONTENT UNLOCKED" not in prompt
 
     def test_get_system_prompt_default_no_nsfw(self):
         """get_system_prompt() mặc định (is_nsfw không truyền) không có NSFW."""
         from src.personality.engine import PersonalityEngine
-        from src.personality.prompts import NENEKA_NSFW_ADDENDUM
         engine = PersonalityEngine()
         prompt = engine.get_system_prompt()
-        assert NENEKA_NSFW_ADDENDUM not in prompt
+        assert "MATURE CONTENT UNLOCKED" not in prompt
+
+    def test_nsfw_tier_scales_with_arousal(self):
+        """NSFW tier tăng dần theo mức arousal/lust."""
+        from src.personality.engine import PersonalityEngine, PersonalityState
+        # Tier 1: low arousal
+        engine = PersonalityEngine(PersonalityState(arousal=10, lust=10))
+        prompt = engine.get_system_prompt(is_nsfw=True)
+        assert "TIER 1" in prompt
+        assert "TIER 3" not in prompt
+        # Tier 3: high arousal
+        engine = PersonalityEngine(PersonalityState(arousal=70, lust=65))
+        prompt = engine.get_system_prompt(is_nsfw=True)
+        assert "TIER 3" in prompt
+        # Tier 4: max
+        engine = PersonalityEngine(PersonalityState(arousal=90, lust=85))
+        prompt = engine.get_system_prompt(is_nsfw=True)
+        assert "TIER 4" in prompt
+        assert "BUÔNG THẢ" in prompt
+
+    def test_nsfw_creator_note_added_for_creator(self):
+        """Khi is_creator=True, NSFW addendum phải có NSFW_CREATOR_NOTE."""
+        from src.personality.engine import PersonalityEngine
+        engine = PersonalityEngine()
+        prompt = engine.get_system_prompt(is_nsfw=True, is_creator=True)
+        assert "ĐẤNG SÁNG TẠO" in prompt
+        assert "Sheffy-sama" in prompt
 
 
 class TestNSFWRuntimeChannels:
