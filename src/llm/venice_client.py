@@ -80,8 +80,11 @@ class VeniceClient:
                     temperature=temperature,
                     extra_headers=headers,
                 )
-                content = response.choices[0].message.content or ""
-                logger.info(f"Venice AI [{attempt_model}] response OK ({len(content)} chars)")
+                msg = response.choices[0].message
+                content = msg.content or ""
+                if not content.strip() and hasattr(msg, "reasoning_content") and msg.reasoning_content:
+                    content = msg.reasoning_content
+                logger.info(f"Venice AI / Local [{attempt_model}] response OK ({len(content)} chars)")
                 return content.strip()
 
             except Exception as e:

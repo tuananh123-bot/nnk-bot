@@ -20,15 +20,15 @@ class Settings(BaseSettings):
     def max_bond_user_id_list(self) -> List[str]:
         return [uid.strip() for uid in self.MAX_BOND_USER_IDS.split(",") if uid.strip()]
 
-    # Venice AI (Uncensored, Private OpenAI-compatible LLM / Local LLM)
-    VENICE_API_KEY: str = Field(default="", description="Venice AI API Key (VENICE_INFERENCE_KEY_...) hoặc Local key")
+    # Venice AI / Local Uncensored LLM (OpenAI-compatible)
+    VENICE_API_KEY: str = Field(default="", description="Venice AI API Key hoặc Local key ('local', 'not-needed')")
     VENICE_DEFAULT_MODEL: str = Field(
-        default="default",
-        description="Model mặc định cho Venice AI (ví dụ: default, llama-3.3-70b, venice-uncensored-role-play)"
+        default="deepseek-v4-pro-qwen3.5-9b-uncensored-heretic",
+        description="Model mặc định cho Venice AI / Local LLM"
     )
     VENICE_BASE_URL: str = Field(
-        default="https://api.venice.ai/api/v1",
-        description="Base URL cho Venice AI API (mặc định https://api.venice.ai/api/v1 hoặc http://localhost:1235/v1)"
+        default="http://localhost:1235/v1",
+        description="Base URL cho Venice AI API / Local LLM (mặc định http://localhost:1235/v1 hoặc https://api.venice.ai/api/v1)"
     )
 
     # AI Horde (Image Generation / Distributed Cluster)
