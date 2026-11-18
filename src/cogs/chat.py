@@ -239,14 +239,6 @@ class ChatCog(commands.Cog):
         )
         await interaction.followup.send(reply)
 
-    @app_commands.command(name="reset", description="✨ Làm mới cuộc hội thoại hiện tại trong kênh (giữ nguyên ký ức dài hạn)")
-    async def cmd_reset_slash(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            "✨ *phẩy nhẹ quyền trượng Metamorphose, xóa sạch bụi mờ của cuộc trò chuyện cũ*\n"
-            "Fufu... Dòng ma lực hội thoại vừa được tái lập lại từ đầu. Giờ thì cậu muốn bắt đầu câu chuyện mới thế nào nào?",
-            ephemeral=False
-        )
-
     @app_commands.command(name="time", description="🕒 Xem thời gian thực tế tại Việt Nam (UTC+7) qua nhận thức của Neneka")
     async def cmd_time(self, interaction: discord.Interaction):
         time_info = get_vietnam_time_info()
@@ -532,7 +524,7 @@ class ChatCog(commands.Cog):
         embed.set_footer(text="Seven Crowns Simulation • Princess Connect! Re:Dive")
         await ctx.reply(embed=embed)
 
-    @commands.command(name="lust", aliases=["lewd", "sensual", "damduc", "hungcam"])
+    @commands.command(name="lust", aliases=["lewd", "sensual", "damduc", "hungcam", "coilust", "xemlust", "checklust"])
     async def pcmd_lust(self, ctx):
         """Xem chi tiết thanh mức độ dâm dục & hứng cảm của Neneka (!n lust / !n lewd)"""
         st = personality_engine.state
@@ -943,6 +935,43 @@ class ChatCog(commands.Cog):
                 await message.reply(err)
             else:
                 await message.reply(embed=embed, view=view)
+            return
+
+        # 9.5 Kiểm tra nếu người dùng yêu cầu xem Lust / Arousal tự nhiên
+        lust_triggers = [
+            "coi lust", "kiểm tra lust", "xem lust", "check lust", "coi lewd",
+            "xem dâm dục", "kiểm tra dâm dục", "mức độ dâm dục", "chỉ số dâm dục",
+            "xem hứng cảm", "kiểm tra hứng cảm", "mức độ hứng cảm", "chỉ số hứng cảm"
+        ]
+        if any(term in clean_content.lower() for term in lust_triggers):
+            st = personality_engine.state
+            embed = discord.Embed(
+                title="💋 Ma Trận Cảm Xúc Thể Xác • Utsushimi Neneka",
+                description="*Phân tích phản ứng sinh lý, ham muốn thể xác và trạng thái hưng cảm của Thất Vương:*",
+                color=0xe91e63
+            )
+            embed.add_field(
+                name="💋 Mức Độ Dâm Dục (Lust / Libido)",
+                value=f"**{st.lust_bar}**\nSắc thái: **{st.lust_description}**",
+                inline=False
+            )
+            embed.add_field(
+                name="🔥 Mức Độ Hứng Cảm (Arousal / Excitement)",
+                value=f"**{st.arousal_bar}**\nTrạng thái cơ thể: **{st.arousal_description}**",
+                inline=False
+            )
+            embed.add_field(
+                name="🎭 Tâm Trạng Hiện Tại",
+                value=f"`{st.emotional_state}`",
+                inline=True
+            )
+            embed.add_field(
+                name="💜 Mức Hảo Cảm",
+                value=f"`{st.affection}/1000`",
+                inline=True
+            )
+            embed.set_footer(text="Seven Crowns Lewdness & Arousal Monitor • Princess Connect! Re:Dive")
+            await message.reply(embed=embed)
             return
 
         # 10. Tạo phản hồi hội thoại thông thường và gửi (hỗ trợ cả văn bản và hình ảnh)
