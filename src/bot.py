@@ -29,6 +29,7 @@ COGS = [
     "src.cogs.voice",
     "src.cogs.entertainment",
     "src.cogs.admin",
+    "src.cogs.image_gen",
     "src.cogs.chat"
 ]
 

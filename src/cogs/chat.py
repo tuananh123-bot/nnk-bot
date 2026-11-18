@@ -142,8 +142,16 @@ class ChatCog(commands.Cog):
                 else:
                     reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
             except Exception as e:
-                logger.error(f"Lỗi khi gọi LLM: {e}")
-                reply = "*khẽ nhấp ngụm trà, ánh mắt khép hờ* Fufu... Ma lực thực tại vừa có chút nhiễu loạn. Cậu nói lại xem nào?"
+                logger.warning(f"Lỗi khi gọi LLM chính ({e}), thử dự phòng qua AI Horde Text...")
+                try:
+                    from src.llm.horde_client import horde_client
+                    if horde_client.is_available():
+                        reply = await horde_client.chat(messages, max_tokens=400, temperature=0.8)
+                    else:
+                        raise e
+                except Exception as e2:
+                    logger.error(f"Tất cả LLM đều thất bại: {e2}")
+                    reply = "*khẽ nhấp ngụm trà, ánh mắt khép hờ* Fufu... Ma lực thực tại vừa có chút nhiễu loạn. Cậu nói lại xem nào?"
 
         # 7. Cộng điểm Bond và cập nhật Ký ức
         await bond_engine.add_bond_points(discord_user_id, points=2, event_type="CONVERSATION")
@@ -728,6 +736,7 @@ class ChatCog(commands.Cog):
             color=0x9b59b6
         )
         embed.add_field(name="`/chat <lời nhắn>` hoặc `!n chat`", value="Trò chuyện trực tiếp cùng Neneka.", inline=False)
+        embed.add_field(name="`/imagine <prompt>` hoặc `/draw` / `!n draw`", value="Vẽ tranh và phác họa ảnh AI (Anime/Chân thực/NSFW) qua AI Horde.", inline=False)
         embed.add_field(name="`/vision <ảnh> [câu hỏi]` hoặc `!n vision`", value="Gửi ảnh để Neneka nhận diện, phân tích và đưa ra nhận xét sắc sảo.", inline=False)
         embed.add_field(name="`/time` hoặc `!n time`", value="Xem giờ, thứ, ngày tháng và buổi hiện tại tại Việt Nam.", inline=False)
         embed.add_field(name="`/weather [nơi]` hoặc `!n weather [nơi]`", value="Tra cứu thời tiết thực tế tại Việt Nam (theo nơi ở của bạn hoặc thành phố chỉ định).", inline=False)

@@ -31,6 +31,9 @@ class Settings(BaseSettings):
         description="Base URL cho API phụ (mặc định OpenRouter, có thể đổi thành http://localhost:1235/v1 cho LM Studio)"
     )
 
+    # AI Horde (Image Generation / Distributed Cluster)
+    AI_HORDE_API_KEY: str = Field(default="", description="AI Horde API Key (https://aihorde.net/)")
+
     # NSFW mode (per-guild / per-channel được lưu runtime; flag global này bật/tắt toàn bộ tính năng)
     NSFW_ENABLED: bool = Field(default=False, description="Cho phép nội dung 18+ toàn cục (True/False)")
     NSFW_CHANNEL_IDS: str = Field(default="", description="Comma-separated channel IDs được phép NSFW")
