@@ -69,6 +69,27 @@ class TestVeniceClient:
         assert client.is_available() is True
         vc_module._instance = None
 
+    def test_singleton_get_uncensored_ai_client(self, monkeypatch):
+        """get_uncensored_ai_client() trả về VeniceClient cấu hình cho uncensored.com."""
+        import src.llm.venice_client as vc_module
+        vc_module._uncensored_instance = None
+        monkeypatch.setattr("src.config.settings.UNCENSORED_API_KEY", "uai_sk_live_test_1234567890123456")
+        monkeypatch.setattr("src.config.settings.UNCENSORED_BASE_URL", "https://api.uncensored.com/api/v1")
+        monkeypatch.setattr("src.config.settings.UNCENSORED_CHAT_MODEL", "deepseek-v4-1-flash-uncensored")
+
+        uai_client = vc_module.get_uncensored_ai_client()
+        assert uai_client is not None
+        assert uai_client.is_available() is True
+        assert uai_client.base_url == "https://api.uncensored.com/api/v1"
+        assert uai_client.model == "deepseek-v4-1-flash-uncensored"
+        vc_module._uncensored_instance = None
+
+    def test_uai_key_format_availability(self):
+        """is_available() nhận diện chính xác uai_ key của Uncensored AI."""
+        from src.llm.venice_client import VeniceClient
+        client = VeniceClient(api_key="uai_sk_live_test_1234567890123456", base_url="https://api.uncensored.com/api/v1")
+        assert client.is_available() is True
+
 
 class TestNSFWConfig:
     """Tests cho cấu hình NSFW mode."""

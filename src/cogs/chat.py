@@ -10,7 +10,7 @@ from discord.ext import commands
 from src.config import settings
 from src.llm.groq_client import GroqClient
 from src.llm.vision_client import vision_client
-from src.llm.venice_client import get_venice_client
+from src.llm.venice_client import get_venice_client, get_uncensored_ai_client
 from src.personality.engine import PersonalityEngine
 from src.memory.engine import MemoryEngine
 from src.bond.engine import BondEngine
@@ -155,10 +155,29 @@ class ChatCog(commands.Cog):
             messages.append({"role": "user", "content": user_message})
 
             try:
-                # Nếu kênh NSFW và Venice AI được cấu hình → dùng Venice AI
-                v_client = get_venice_client()
-                if is_nsfw and v_client and v_client.is_available():
-                    reply = await v_client.chat(messages, temperature=0.85, max_tokens=1200)
+                # Nếu kênh NSFW: Ưu tiên NoTrack AI -> dự phòng Uncensored AI -> Groq
+                reply = None
+                if is_nsfw:
+                    # 1. Thử NoTrack AI (hoặc Venice / Local)
+                    v_client = get_venice_client()
+                    if v_client and v_client.is_available():
+                        try:
+                            reply = await v_client.chat(messages, temperature=0.85, max_tokens=1200)
+                        except Exception as e_notrack:
+                            logger.warning(f"NoTrack AI chat không hoạt động ({e_notrack}). Tự động chuyển tiếp sang Uncensored AI...")
+
+                    # 2. Dự phòng: Uncensored AI (api.uncensored.com)
+                    if not reply:
+                        uai_client = get_uncensored_ai_client()
+                        if uai_client and uai_client.is_available():
+                            try:
+                                reply = await uai_client.chat(messages, temperature=0.85, max_tokens=1200)
+                            except Exception as e_uai:
+                                logger.warning(f"Uncensored AI chat không khả dụng ({e_uai}).")
+
+                    # 3. Nếu cả 2 đều không phản hồi, dùng Groq
+                    if not reply:
+                        reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
                 else:
                     reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
             except Exception as e:

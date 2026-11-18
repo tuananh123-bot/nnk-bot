@@ -37,8 +37,16 @@ class Settings(BaseSettings):
     # AI Horde (Image Generation / Distributed Cluster)
     AI_HORDE_API_KEY: str = Field(default="", description="AI Horde API Key (https://aihorde.net/)")
 
-    # Uncensored AI (Image Generation - seedream-v5)
+    # Uncensored AI (Text Chat & Image Generation)
     UNCENSORED_API_KEY: str = Field(default="", description="Uncensored AI API Key (uai_sk_...)")
+    UNCENSORED_BASE_URL: str = Field(
+        default="https://api.uncensored.com/api/v1",
+        description="Base URL cho Uncensored AI API (Chat & Images)"
+    )
+    UNCENSORED_CHAT_MODEL: str = Field(
+        default="deepseek-v4-1-flash-uncensored",
+        description="Model mặc định cho Uncensored AI Chat (ví dụ: deepseek-v4-1-flash-uncensored)"
+    )
     UNCENSORED_IMAGE_BASE_URL: str = Field(
         default="https://api.uncensored.com/api/v1",
         description="Base URL cho Uncensored AI Images API"
