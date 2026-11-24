@@ -16,15 +16,24 @@ class Settings(BaseSettings):
     )
     AUTO_REPLY_CHANNELS: str = Field(default="", description="Comma-separated channel IDs")
 
-    # Custom Discord Emoji Source Server (https://discord.gg/BJTm5Zsjm)
+    # Custom Discord Emoji Source Server(s) (hỗ trợ 1 hoặc nhiều ID cách nhau dấu phẩy, ưu tiên 1169588792064217159)
     EMOJI_SOURCE_GUILD_ID: str = Field(
-        default="413766882277982228",
-        description="ID máy chủ Discord nguồn cung cấp custom emoji khi chat"
+        default="1169588792064217159,413766882277982228",
+        description="Danh sách ID máy chủ Discord nguồn cung cấp custom emoji khi chat (ưu tiên từ trái sang phải)"
     )
     EMOJI_SOURCE_INVITE_URL: str = Field(
         default="https://discord.gg/BJTm5Zsjm",
         description="Link invite máy chủ Discord nguồn cung cấp custom emoji"
     )
+
+    @property
+    def emoji_source_guild_ids(self) -> List[int]:
+        ids: List[int] = []
+        for raw in self.EMOJI_SOURCE_GUILD_ID.split(","):
+            s = raw.strip()
+            if s.isdigit():
+                ids.append(int(s))
+        return ids
 
     @property
     def max_bond_user_id_list(self) -> List[str]:

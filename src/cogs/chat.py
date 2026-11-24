@@ -598,7 +598,7 @@ class ChatCog(commands.Cog):
         embed.set_footer(text=f"Emoji Source Guild ID: {info['guild_id']}")
         return embed
 
-    @app_commands.command(name="emojis", description="😄 Kiểm tra kho Custom Emoji từ server nguồn (413766882277982228)")
+    @app_commands.command(name="emojis", description="😄 Kiểm tra kho Custom Emoji từ server nguồn (1169588792064217159)")
     async def cmd_emojis(self, interaction: discord.Interaction):
         await interaction.response.send_message(embed=self._build_emoji_status_embed())
 

@@ -150,19 +150,21 @@ class TestServerCustomEmojiIntegration:
         e2.animated = True
         e2.available = True
 
+        primary_gid = 1169588792064217159
         guild = MagicMock()
-        guild.id = int(settings.EMOJI_SOURCE_GUILD_ID)
-        guild.name = "Emoji Source Server"
+        guild.id = primary_gid
+        guild.name = "Primary Emoji Server"
         guild.emojis = [e1, e2]
 
         bot = MagicMock()
-        bot.get_guild = MagicMock(side_effect=lambda gid: guild if gid == int(settings.EMOJI_SOURCE_GUILD_ID) else None)
+        bot.get_guild = MagicMock(side_effect=lambda gid: guild if gid == primary_gid else None)
         bot.user = MagicMock()
         bot.user.id = 1234567890
         return bot
 
     def test_emoji_source_guild_config_and_prompt(self):
-        assert settings.EMOJI_SOURCE_GUILD_ID == "413766882277982228"
+        assert 1169588792064217159 in settings.emoji_source_guild_ids
+        assert settings.emoji_source_guild_ids[0] == 1169588792064217159
         bot = self._make_mock_bot_with_emoji_guild()
 
         guide = emoji_manager.build_emoji_prompt_guide(bot, is_coding=False)
