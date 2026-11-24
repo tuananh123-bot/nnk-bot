@@ -96,17 +96,35 @@ class VeniceClient:
                 if client == "legacy":
                     return await self._chat_legacy(messages, attempt_model, max_tokens, temperature)
 
-                response = await client.chat.completions.create(
-                    model=attempt_model,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    extra_headers=headers,
-                )
+                try:
+                    response = await client.chat.completions.create(
+                        model=attempt_model,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        temperature=min(temperature, 0.72),
+                        frequency_penalty=0.35,
+                        presence_penalty=0.25,
+                        extra_headers=headers,
+                    )
+                except Exception as penalty_err:
+                    # Một số endpoint OpenAI-compatible không nhận frequency_penalty -> gọi lại cơ bản
+                    if "penalty" in str(penalty_err).lower() or "400" in str(penalty_err):
+                        response = await client.chat.completions.create(
+                            model=attempt_model,
+                            messages=messages,
+                            max_tokens=max_tokens,
+                            temperature=min(temperature, 0.72),
+                            extra_headers=headers,
+                        )
+                    else:
+                        raise
+
                 msg = response.choices[0].message
-                content = msg.content or ""
-                if not content.strip() and hasattr(msg, "reasoning_content") and msg.reasoning_content:
-                    content = msg.reasoning_content
+                from src.utils.response_guard import strip_thinking_blocks
+                content = strip_thinking_blocks(msg.content or "")
+                # TUYỆT ĐỐI KHÔNG lấy msg.reasoning_content làm câu trả lời gửi ra Discord vì đó là nháp suy nghĩ nội tâm!
+                if not content:
+                    raise RuntimeError(f"Model {attempt_model} chỉ sinh nháp suy nghĩ hoặc trả về rỗng.")
                 logger.info(f"LLM Provider [{self.base_url} - {attempt_model}] response OK ({len(content)} chars)")
                 return content.strip()
 

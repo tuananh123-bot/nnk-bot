@@ -64,13 +64,26 @@ class GroqClient:
                         "messages": messages,
                         "temperature": temperature,
                         "max_tokens": max_tokens,
+                        "frequency_penalty": 0.3,
+                        "presence_penalty": 0.2,
                     }
                     if response_format:
                         kwargs["response_format"] = response_format
 
-                    response = await self._client.chat.completions.create(**kwargs)
+                    try:
+                        response = await self._client.chat.completions.create(**kwargs)
+                    except APIStatusError as status_err:
+                        if status_err.status_code == 400 and ("penalty" in str(status_err).lower()):
+                            kwargs.pop("frequency_penalty", None)
+                            kwargs.pop("presence_penalty", None)
+                            response = await self._client.chat.completions.create(**kwargs)
+                        else:
+                            raise
+
                     choice = response.choices[0]
-                    content = (choice.message.content or "").strip()
+                    from src.utils.response_guard import strip_thinking_blocks
+                    raw_content = choice.message.content or ""
+                    content = strip_thinking_blocks(raw_content) if not response_format else raw_content.strip()
 
                     if not content:
                         logger.warning(

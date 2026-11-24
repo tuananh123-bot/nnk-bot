@@ -32,7 +32,7 @@ class MemoryEngine:
 
     @staticmethod
     def is_valid_dialogue_turn(user_text: str, bot_text: str) -> bool:
-        """Kiểm tra xem lượt thoại có hoàn chỉnh và hợp lệ không để tránh ô nhiễm context."""
+        """Kiểm tra xem lượt thoại có hoàn chỉnh và không bị lỗi lặp/tự mâu thuẫn để tránh ô nhiễm context."""
         if not user_text or not bot_text:
             return False
         bot_s = bot_text.strip()
@@ -43,6 +43,10 @@ class MemoryEngine:
             return False
         clean_words = [w for w in re.split(r'[\s.,!?…*~]+', bot_s.lower()) if w]
         if clean_words and all(w in {"hửm", "ara", "fufu", "chà", "a", "ừm"} for w in clean_words):
+            return False
+        # Chặn tuyệt đối các tin nhắn từng bị lặp vòng hoặc tự mâu thuẫn ("không, sai rồi... ta đang tự mâu thuẫn...")
+        from src.utils.response_guard import has_degenerative_loop_or_contradiction
+        if has_degenerative_loop_or_contradiction(bot_s):
             return False
         return True
 

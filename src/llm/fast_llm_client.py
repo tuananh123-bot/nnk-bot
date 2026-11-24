@@ -86,7 +86,8 @@ class FastLLMClient:
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        content = (resp.choices[0].message.content or "").strip()
+        from src.utils.response_guard import strip_thinking_blocks
+        content = strip_thinking_blocks(resp.choices[0].message.content or "")
         if not content:
             raise RuntimeError(f"{name} ({model}) trả về rỗng.")
         logger.info(f"⚡ [{name} • {model}] phản hồi thành công ({len(content)} chars)")

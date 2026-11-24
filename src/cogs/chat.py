@@ -15,6 +15,11 @@ from src.llm.vision_client import vision_client
 from src.llm.venice_client import get_venice_client, get_uncensored_ai_client
 from src.llm.model_status import build_model_status_embed, get_active_models_info
 from src.utils.emoji_manager import emoji_manager
+from src.utils.response_guard import (
+    strip_thinking_blocks,
+    has_degenerative_loop_or_contradiction,
+    salvage_non_looping_text,
+)
 from src.utils.media_extractor import (
     extract_code_attachments,
     format_code_files_for_prompt,
@@ -50,11 +55,10 @@ memory_engine = MemoryEngine(groq_client=groq_client)
 bond_engine = BondEngine()
 
 def sanitize_neneka_reply(reply: str) -> str:
-    """Loại bỏ các đoạn kết thúc đứt đoạn hoặc từ cảm thán bị cắt cụt do model lỗi."""
+    """Loại bỏ khối <think>, cắt sạch vòng lặp tự mâu thuẫn / lặp dòng và từ đệm cụt lủn."""
     if not reply:
         return reply
-    text = reply.strip()
-    # Loại bỏ dòng đuôi cụt lủn như "\nA", "\nAra", "\nChà", "\nHửm"
+    text = salvage_non_looping_text(reply)
     lines = text.split("\n")
     while len(lines) > 1:
         last_line = lines[-1].strip().lower()
@@ -63,7 +67,6 @@ def sanitize_neneka_reply(reply: str) -> str:
         else:
             break
     sanitized = "\n".join(lines).strip()
-    # Chỉ thay thế khi câu trả lời hoàn toàn rỗng hoặc chỉ toàn từ đệm bị lỗi cắt cụt
     clean_words = [w for w in re.split(r'[\s.,!?…*~]+', sanitized.lower()) if w]
     if not sanitized or (clean_words and all(w in {"hửm", "ara", "chà", "a"} for w in clean_words)):
         sanitized = "Sao thế cậu? Nói rõ hơn chút cho ta nghe xem nào 😄"
@@ -339,7 +342,32 @@ class ChatCog(commands.Cog):
                     logger.error(f"Tất cả LLM đều thất bại: {e2}")
                     reply = "Mạng ma thuật bên ta vừa lag nhẹ một nhịp, cậu nhắn lại giúp ta nhé 😅"
 
-        # 6.5 Làm sạch phản hồi & đồng bộ Custom Emoji từ server 413766882277982228 (bảo toàn khối ```code```)
+        # 6.4 Khiên tự phục hồi (Self-Healing Guard): Nếu model rơi vào vòng lặp lặp câu hoặc tự mâu thuẫn, tự động tạo lại câu trả lời sạch & dứt khoát!
+        if not image_data and reply and has_degenerative_loop_or_contradiction(reply):
+            logger.warning("⚠️ Phát hiện LLM sinh văn bản bị lặp vòng / tự mâu thuẫn! Đang tự động tái tạo câu trả lời dứt khoát...")
+            heal_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        full_system_prompt
+                        + "\n\n[CHỈ THỊ KHẨN CẤP]: Trả lời cực kỳ ngắn gọn (1 đến 3 câu), dứt khoát, mạch lạc. "
+                        "TUYỆT ĐỐI KHÔNG tự sửa lưng ('không, sai rồi', 'không, ta đang đùa'), KHÔNG lặp lại câu."
+                    ),
+                },
+                *history_messages[-4:],
+                {"role": "user", "content": effective_user_prompt},
+            ]
+            try:
+                if fast_llm_client.has_gemini:
+                    healed = await fast_llm_client.chat_gemini_fast(heal_messages, temperature=0.35, max_tokens=350)
+                else:
+                    healed = await groq_client.chat_completion(heal_messages, temperature=0.35, max_tokens=350)
+                if healed and not has_degenerative_loop_or_contradiction(healed):
+                    reply = healed
+            except Exception as heal_err:
+                logger.warning(f"Tái tạo câu trả lời anti-loop lỗi nhẹ ({heal_err}), áp dụng bộ cắt lọc trực tiếp.")
+
+        # 6.5 Làm sạch phản hồi & đồng bộ Custom Emoji từ server 1169588792064217159 (bảo toàn khối ```code```)
         reply = sanitize_neneka_reply(reply)
         reply = emoji_manager.resolve_emojis_in_reply(reply, self.bot, current_guild_id=guild_id)
 
