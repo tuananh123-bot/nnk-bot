@@ -3,6 +3,8 @@ import pytest
 from unittest.mock import MagicMock
 
 from src.utils.features_hub import (
+    is_asking_whats_new,
+    build_spoken_whats_new_reply,
     build_updates_embed,
     build_help_embed,
     NENEKA_BOT_CAPABILITIES_PROMPT,
@@ -52,3 +54,24 @@ def test_updates_help_and_reload_commands_registered():
     assert "updates" in chat_cmds
     assert "help" in chat_cmds
     assert "reload" in admin_cmds
+
+
+def test_is_asking_whats_new_slang_and_spoken_reply():
+    positive_queries = [
+        "nay có j mới ko em",
+        "ê có gì mới thế",
+        "bot mới update j vậy",
+        "em vừa cập nhật gì đó",
+        "co j moi khong",
+        "có tính năng gì mới",
+        "what's new",
+    ]
+    for q in positive_queries:
+        assert is_asking_whats_new(q) is True, f"Should match: {q}"
+
+    assert is_asking_whats_new("hôm nay ăn cơm chưa") is False
+
+    spoken = build_spoken_whats_new_reply()
+    assert "Piano" in spoken
+    assert "Code" in spoken
+    assert "GIF" in spoken

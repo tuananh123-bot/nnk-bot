@@ -16,6 +16,8 @@ from src.llm.venice_client import get_venice_client, get_uncensored_ai_client
 from src.llm.model_status import build_model_status_embed, get_active_models_info
 from src.utils.emoji_manager import emoji_manager
 from src.utils.features_hub import (
+    is_asking_whats_new,
+    build_spoken_whats_new_reply,
     build_updates_embed,
     build_help_embed,
     HelpCategoryView,
@@ -1084,7 +1086,9 @@ class ChatCog(commands.Cog):
 
     @app_commands.command(name="updates", description="✨ Xem danh sách các tính năng mới vừa cập nhật cho Neneka Bot (kèm nút dùng thử)")
     async def cmd_updates(self, interaction: discord.Interaction):
+        gid = str(interaction.guild_id) if interaction.guild_id else None
         await interaction.response.send_message(
+            content=build_spoken_whats_new_reply(self.bot, current_guild_id=gid),
             embed=build_updates_embed(),
             view=UpdatesInteractiveView(self.bot),
         )
@@ -1092,7 +1096,12 @@ class ChatCog(commands.Cog):
     @commands.command(name="updates", aliases=["capnhat", "tinhnangmoi", "changelog", "new"])
     async def pcmd_updates(self, ctx: commands.Context):
         """Xem toàn bộ các tính năng mới vừa cập nhật (!n updates / !n tinhnangmoi)."""
-        await ctx.reply(embed=build_updates_embed(), view=UpdatesInteractiveView(self.bot))
+        gid = str(ctx.guild.id) if ctx.guild else None
+        await ctx.reply(
+            content=build_spoken_whats_new_reply(self.bot, current_guild_id=gid),
+            embed=build_updates_embed(),
+            view=UpdatesInteractiveView(self.bot),
+        )
 
     @app_commands.command(name="help", description="📖 Mở cẩm nang hướng dẫn toàn bộ lệnh và tính năng của Neneka")
     async def cmd_help_slash(self, interaction: discord.Interaction):
@@ -1399,13 +1408,14 @@ class ChatCog(commands.Cog):
             await message.reply(embed=embed)
             return
 
-        # 9.9 Kiểm tra nếu người dùng hỏi về các tính năng mới vừa cập nhật của bot
-        updates_triggers = [
-            "tính năng mới", "vừa cập nhật gì", "mới cập nhật gì", "cập nhật mới",
-            "có gì mới", "changelog", "bản cập nhật mới", "tinh nang moi", "vua cap nhat"
-        ]
-        if any(term in clean_content.lower() for term in updates_triggers):
-            await message.reply(embed=build_updates_embed(), view=UpdatesInteractiveView(self.bot))
+        # 9.9 Kiểm tra nếu người dùng hỏi "có j mới / có gì mới / vừa cập nhật gì" -> Nói trực tiếp tính năng mới + kèm bảng nút bấm
+        if is_asking_whats_new(clean_content):
+            gid = str(message.guild.id) if message.guild else None
+            await message.reply(
+                content=build_spoken_whats_new_reply(self.bot, current_guild_id=gid),
+                embed=build_updates_embed(),
+                view=UpdatesInteractiveView(self.bot),
+            )
             return
 
         # 10. Tạo phản hồi hội thoại thông thường, đọc Code, đọc Ảnh & GIF (Tenor/Giphy/Discord)

@@ -7,6 +7,7 @@ Trung Tâm Tính Năng Mới & Cẩm Nang Tương Tác Của Neneka Bot:
 """
 
 import os
+import re
 from typing import Optional
 import discord
 
@@ -14,6 +15,44 @@ from src.llm.model_status import build_model_status_embed
 from src.utils.emoji_manager import emoji_manager
 
 BOT_VERSION = "v3.6 — Metamorph Symphony & Smart Guard"
+
+WHATS_NEW_PATTERNS = [
+    r"\bcó\s+(?:gì|j)\s+mới\b",
+    r"\bco\s+(?:gi|j)\s+moi\b",
+    r"\b(?:gì|j)\s+mới\s+(?:không|ko|k|hông|hem|thế|vậy|nhỉ|đó|nào)\b",
+    r"\b(?:tính|chức)\s+năng\s+(?:gì\s+|j\s+)?mới\b",
+    r"\btinh\s+nang\s+(?:gi\s+|j\s+)?moi\b",
+    r"\b(?:vừa|mới)\s+(?:được\s+|dc\s+)?(?:cập\s+nhật|update)\b",
+    r"\b(?:vua|moi)\s+(?:duoc\s+|dc\s+)?(?:cap\s+nhat|update)\b",
+    r"\b(?:cập\s+nhật|cap\s+nhat|update)\s+(?:gì|j|nào)?\s*mới\b",
+    r"\b(?:cập\s+nhật|update)\s+(?:gì|j)\b",
+    r"\blàm\s+(?:được|đc|dc)\s+(?:gì|j)\s+mới\b",
+    r"\bbiết\s+làm\s+(?:gì|j)\s+mới\b",
+    r"\bchangelog\b",
+    r"\bwhat'?s\s+new\b",
+]
+
+
+def is_asking_whats_new(text: str) -> bool:
+    """Nhận diện mọi cách hỏi tự nhiên & viết tắt ('có j mới', 'có gì mới ko', 'mới update j'...) về tính năng mới."""
+    if not text:
+        return False
+    lower = text.lower().strip()
+    return any(re.search(pat, lower) for pat in WHATS_NEW_PATTERNS)
+
+
+def build_spoken_whats_new_reply(bot=None, current_guild_id: Optional[str] = None) -> str:
+    """Lời nói trực tiếp tự nhiên của Neneka kể ra các tính năng mới vừa được cập nhật."""
+    emoji_map = emoji_manager.get_available_emoji_map(bot, current_guild_id=current_guild_id)
+    flair_emoji = next(iter(emoji_map.values()), "✨")
+    return (
+        f"Đợt này ta vừa được nâng cấp thêm kha khá phép thuật mới hay ho đấy {flair_emoji} Kể nhanh cho cậu nghe nhé:\n"
+        "• 🎹 **Đàn Piano 48kHz & Tìm nhạc Piano toàn cầu:** Cậu có thể nhờ ta tạo âm tiết/gảy nốt nhạc (`/notes Đô Rê Mi Pha Sol`, cảm âm `1 2 3 5 6`) hoặc tìm bất kỳ bài nhạc tiếng Piano nào trên thế giới (`/piano <tên bài>`).\n"
+        "• 💻 **Đọc file Code & Viết Code siêu tốc:** Cứ quăng thẳng file `.py`, `.js`, `.ts`, `.cpp`, `.json`... hoặc ảnh lỗi vào đây, ta đọc và viết/sửa code cho cậu ngay (`/code`).\n"
+        "• 🎞️ **Đọc ảnh động GIF & Sticker:** Thả GIF Tenor/Giphy hay `.gif` là ta nhìn hiểu biểu cảm để tung hứng liền.\n"
+        "• 😄 **Chat tự nhiên, nhanh hơn & thả Custom Emoji** từ server nguồn, kèm **Vẽ tranh Google Nano Banana 🍌** (`/imagine`) và **Khiên chống lặp câu**.\n\n"
+        "Cậu xem chi tiết hoặc bấm nút nghe thử ngay ở bảng dưới này nhé! 👇"
+    )
 
 # Đoạn tóm tắt gọn nhẹ đưa vào System Prompt để Neneka tự biết mình làm được những gì khi người dùng hỏi chuyện
 NENEKA_BOT_CAPABILITIES_PROMPT = """【NHẬN THỨC VỀ CÁC TÍNH NĂNG HIỆN TẠI CỦA NENEKA TRÊN DISCORD】
