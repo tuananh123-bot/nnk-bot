@@ -140,6 +140,68 @@ class AdminCog(commands.Cog):
         embed.set_footer(text=f"Antigravity Neneka Engine • Ping: {round(self.bot.latency * 1000)}ms")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    async def _perform_hot_reload(self, pull_git: bool = False) -> str:
+        """Tải lại nóng (Hot-Reload) toàn bộ Cogs và đồng bộ Slash Commands mà không cần tắt bot."""
+        import asyncio
+        import subprocess
+        from src.bot import COGS
+
+        logs = []
+        if pull_git:
+            try:
+                proc = await asyncio.to_thread(
+                    subprocess.run,
+                    ["git", "pull", "origin", "main"],
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                git_out = (proc.stdout or proc.stderr or "OK").strip().splitlines()[-1]
+                logs.append(f"🔄 **Git Pull:** `{git_out}`")
+            except Exception as e:
+                logs.append(f"⚠️ **Git Pull:** `{e}`")
+
+        reloaded = 0
+        for ext in COGS:
+            try:
+                if ext in self.bot.extensions:
+                    await self.bot.reload_extension(ext)
+                else:
+                    await self.bot.load_extension(ext)
+                reloaded += 1
+            except Exception as e:
+                logs.append(f"❌ Lỗi nạp `{ext}`: `{e}`")
+
+        try:
+            synced = await self.bot.tree.sync()
+            logs.append(f"✅ **Đã nạp nóng `{reloaded}/{len(COGS)}` Cogs & đồng bộ `{len(synced)}` Slash Commands!**")
+        except Exception as e:
+            logs.append(f"✅ Đã nạp nóng `{reloaded}/{len(COGS)}` Cogs (Sync lưu ý: `{e}`)")
+
+        return "\n".join(logs)
+
+    @app_commands.command(name="reload", description="🔄 Nạp nóng tính năng mới vừa cập nhật & đồng bộ lệnh không cần tắt bot (Creator)")
+    @app_commands.describe(pull_github="Tự động kéo code mới nhất từ GitHub trước khi nạp lại (True/False)")
+    async def cmd_reload(self, interaction: discord.Interaction, pull_github: bool = True):
+        is_creator = (str(interaction.user.id) == str(settings.CREATOR_USER_ID))
+        if not is_creator and not (interaction.user.guild_permissions and interaction.user.guild_permissions.administrator):
+            await interaction.response.send_message("❌ Chỉ Đấng Sáng Tạo hoặc Administrator mới được phép nạp nóng hệ thống.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        report = await self._perform_hot_reload(pull_git=pull_github)
+        await interaction.followup.send(report, ephemeral=True)
+
+    @commands.command(name="reload", aliases=["hotreload", "updatebot"])
+    async def pcmd_reload(self, ctx: commands.Context):
+        """Lệnh !n reload dành cho Creator: kéo GitHub và nạp nóng toàn bộ tính năng mới ngay lập tức."""
+        is_creator = (str(ctx.author.id) == str(settings.CREATOR_USER_ID))
+        if not is_creator and not (ctx.author.guild_permissions and ctx.author.guild_permissions.administrator):
+            await ctx.reply("❌ Chỉ Đấng Sáng Tạo hoặc Administrator mới được phép nạp nóng hệ thống.")
+            return
+        async with ctx.typing():
+            report = await self._perform_hot_reload(pull_git=True)
+            await ctx.reply(report)
+
 async def setup(bot):
     await bot.add_cog(AdminCog(bot))
 

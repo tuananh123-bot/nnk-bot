@@ -15,6 +15,12 @@ from src.llm.vision_client import vision_client
 from src.llm.venice_client import get_venice_client, get_uncensored_ai_client
 from src.llm.model_status import build_model_status_embed, get_active_models_info
 from src.utils.emoji_manager import emoji_manager
+from src.utils.features_hub import (
+    build_updates_embed,
+    build_help_embed,
+    HelpCategoryView,
+    UpdatesInteractiveView,
+)
 from src.utils.response_guard import (
     strip_thinking_blocks,
     has_degenerative_loop_or_contradiction,
@@ -1076,41 +1082,29 @@ class ChatCog(commands.Cog):
             )
             await ctx.reply(reply)
 
-    @commands.command(name="help")
-    async def pcmd_help(self, ctx):
-        """Hiển thị hướng dẫn lệnh"""
-        embed = discord.Embed(
-            title="📖 Danh Sách Lệnh Neneka Bot",
-            description="Trò chuyện bằng Slash Commands `/chat`, mention bot hoặc gõ trong kênh tự động trả lời.",
-            color=0x9b59b6
+    @app_commands.command(name="updates", description="✨ Xem danh sách các tính năng mới vừa cập nhật cho Neneka Bot (kèm nút dùng thử)")
+    async def cmd_updates(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            embed=build_updates_embed(),
+            view=UpdatesInteractiveView(self.bot),
         )
-        embed.add_field(name="`/chat <lời nhắn>` hoặc `!n chat`", value="Trò chuyện trực tiếp cùng Neneka.", inline=False)
-        embed.add_field(name="`/imagine <prompt>` hoặc `/draw` / `!n draw`", value="Vẽ tranh và phác họa ảnh AI (Anime/Chân thực/NSFW) qua AI Horde.", inline=False)
-        embed.add_field(name="`/vision <ảnh> [câu hỏi]` hoặc `!n vision`", value="Gửi ảnh để Neneka nhận diện, phân tích và đưa ra nhận xét sắc sảo.", inline=False)
-        embed.add_field(name="`/time` hoặc `!n time`", value="Xem giờ, thứ, ngày tháng và buổi hiện tại tại Việt Nam.", inline=False)
-        embed.add_field(name="`/weather [nơi]` hoặc `!n weather [nơi]`", value="Tra cứu thời tiết thực tế tại Việt Nam (theo nơi ở của bạn hoặc thành phố chỉ định).", inline=False)
-        embed.add_field(name="`/location [nơi]` hoặc `!n location [nơi]`", value="Đặt nơi ở để Neneka cập nhật thời tiết chuẩn xác mà không cần hỏi lại.", inline=False)
-        embed.add_field(name="`/neneka`", value="Xem hồ sơ nhân vật Thất Vương.", inline=False)
-        embed.add_field(name="`/costume [tên]`", value="Xem hoặc chuyển đổi trang phục (original, new_year, alpha, summer).", inline=False)
-        embed.add_field(name="`/bond` hoặc `!n status` / `/status`", value="Kiểm tra cấp độ gắn kết, điểm hảo cảm, thanh mức độ dâm dục & hứng cảm.", inline=False)
-        embed.add_field(name="`!n lust` hoặc `/lust` (hoặc `!n lewd`)", value="Xem chi tiết ma trận dâm dục (Lust) & mức độ hứng cảm (Arousal) của Neneka.", inline=False)
-        embed.add_field(name="`/nsfw <enable/disable/status>`", value="Bật/tắt chế độ nội dung 18+ cho kênh (yêu cầu Manage Channels hoặc Creator).", inline=False)
-        embed.add_field(name="`/story [từ khóa]`", value="Tra cứu cốt truyện Canon và ký ức lưu trữ.", inline=False)
-        embed.add_field(name="`/memory` & `/forget`", value="Quản lý và minh bạch ký ức dài hạn.", inline=False)
-        embed.add_field(name="`!n nickname [@user] <tên>` hoặc `/nickname`", value="Đặt biệt danh để Neneka gọi bạn hoặc người khác.", inline=False)
-        embed.add_field(name="`!n fortune` hoặc `/fortune` / `!n daily`", value="Gieo quẻ vận mệnh mỗi ngày, bói vận thế & nhận điểm gắn kết.", inline=False)
-        embed.add_field(name="`!n mirror` hoặc `/mirror`", value="Mini-game Gương Ảo Ảnh: Thử tài tinh mắt đoán bản thể thật của Neneka qua nút bấm.", inline=False)
-        embed.add_field(name="`!n sleep [chủ đề]` hoặc `/sleep`", value="Chế độ ru ngủ ban đêm: Neneka kể chuyện và thì thầm lời ru tiếng Nhật êm đềm.", inline=False)
-        embed.add_field(name="`!n speak <câu>` hoặc `/speak`", value="Yêu cầu Neneka cất giọng tiếng Nhật (Fish Audio Metamorph Regnant).", inline=False)
-        embed.add_field(name="`!n piano <tên bài>` hoặc `/piano`", value="Tìm kiếm và phát toàn bộ các bài nhạc tiếng Piano trên thế giới (Anime, Cổ điển, V-Pop, J-Pop...).", inline=False)
-        embed.add_field(name="`!n notes <chuỗi nốt>` hoặc `/notes`", value="Tạo âm tiết & gảy nốt nhạc Đại Dương Cầm 48kHz (`Đô Rê Mi Pha Sol`, `C4 E4 G4`, cảm âm `1 2 3 5 6`, hợp âm `Cmaj Am`).", inline=False)
-        embed.add_field(name="`!n compose [chủ đề]` hoặc `/piano_compose`", value="Nhờ Neneka sáng tác hoặc độc tấu dương cầm (Canon in D, River Flows in You, Howl's Moving Castle...).", inline=False)
-        embed.add_field(name="`!n sing [chủ đề]` hoặc `/sing`", value="Yêu cầu Neneka cất giọng hát bài ngẫu nhiên theo phong cách Nhật Bản.", inline=False)
-        embed.add_field(name="`!n join` & `!n leave`", value="Mời Neneka vào hoặc rời phòng thoại (Voice Channel).", inline=False)
-        embed.add_field(name="`!n quote` & `!n radio`", value="Phát câu thoại kinh điển gốc hoặc lời chào ngẫu nhiên trong Voice.", inline=False)
-        embed.add_field(name="`/autochat` & `/autonomous`", value="Lệnh quản trị cấu hình kênh và chế độ tự động.", inline=False)
-        embed.set_footer(text="Princess Connect! Re:Dive • Autonomous Neneka AI")
-        await ctx.reply(embed=embed)
+
+    @commands.command(name="updates", aliases=["capnhat", "tinhnangmoi", "changelog", "new"])
+    async def pcmd_updates(self, ctx: commands.Context):
+        """Xem toàn bộ các tính năng mới vừa cập nhật (!n updates / !n tinhnangmoi)."""
+        await ctx.reply(embed=build_updates_embed(), view=UpdatesInteractiveView(self.bot))
+
+    @app_commands.command(name="help", description="📖 Mở cẩm nang hướng dẫn toàn bộ lệnh và tính năng của Neneka")
+    async def cmd_help_slash(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            embed=build_help_embed("all"),
+            view=HelpCategoryView(),
+        )
+
+    @commands.command(name="help", aliases=["menu", "commands", "tinhnang"])
+    async def pcmd_help(self, ctx):
+        """Hiển thị cẩm nang hướng dẫn lệnh phân mục tương tác"""
+        await ctx.reply(embed=build_help_embed("all"), view=HelpCategoryView())
 
     # =========================================================================
     # ON_MESSAGE EVENT ROUTING
@@ -1403,6 +1397,15 @@ class ChatCog(commands.Cog):
                     is_ch_nsfw = True
             embed = build_model_status_embed(is_channel_nsfw=is_ch_nsfw)
             await message.reply(embed=embed)
+            return
+
+        # 9.9 Kiểm tra nếu người dùng hỏi về các tính năng mới vừa cập nhật của bot
+        updates_triggers = [
+            "tính năng mới", "vừa cập nhật gì", "mới cập nhật gì", "cập nhật mới",
+            "có gì mới", "changelog", "bản cập nhật mới", "tinh nang moi", "vua cap nhat"
+        ]
+        if any(term in clean_content.lower() for term in updates_triggers):
+            await message.reply(embed=build_updates_embed(), view=UpdatesInteractiveView(self.bot))
             return
 
         # 10. Tạo phản hồi hội thoại thông thường, đọc Code, đọc Ảnh & GIF (Tenor/Giphy/Discord)

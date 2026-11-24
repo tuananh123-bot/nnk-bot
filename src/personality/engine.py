@@ -2,6 +2,7 @@
 import re
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, Union
+from src.utils.features_hub import NENEKA_BOT_CAPABILITIES_PROMPT
 from src.personality.prompts import (
     NENEKA_CANON_BASE_PROMPT,
     NENEKA_VIETNAMESE_STYLE_PROMPT,
@@ -483,7 +484,9 @@ class PersonalityEngine:
 
         return f"""{NENEKA_CANON_BASE_PROMPT}
 
-{NENEKA_CANON_FACTS}{creator_section}{max_bond_section}{coding_section}{nsfw_section}{sensual_matrix_guide}{costume_section}
+{NENEKA_CANON_FACTS}
+
+{NENEKA_BOT_CAPABILITIES_PROMPT}{creator_section}{max_bond_section}{coding_section}{nsfw_section}{sensual_matrix_guide}{costume_section}
 
 {style_section}
 
