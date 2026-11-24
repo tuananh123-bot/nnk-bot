@@ -1,4 +1,5 @@
 # src/cogs/chat.py
+import os
 import re
 import asyncio
 import logging
@@ -1073,6 +1074,9 @@ class ChatCog(commands.Cog):
         embed.add_field(name="`!n mirror` hoặc `/mirror`", value="Mini-game Gương Ảo Ảnh: Thử tài tinh mắt đoán bản thể thật của Neneka qua nút bấm.", inline=False)
         embed.add_field(name="`!n sleep [chủ đề]` hoặc `/sleep`", value="Chế độ ru ngủ ban đêm: Neneka kể chuyện và thì thầm lời ru tiếng Nhật êm đềm.", inline=False)
         embed.add_field(name="`!n speak <câu>` hoặc `/speak`", value="Yêu cầu Neneka cất giọng tiếng Nhật (Fish Audio Metamorph Regnant).", inline=False)
+        embed.add_field(name="`!n piano <tên bài>` hoặc `/piano`", value="Tìm kiếm và phát toàn bộ các bài nhạc tiếng Piano trên thế giới (Anime, Cổ điển, V-Pop, J-Pop...).", inline=False)
+        embed.add_field(name="`!n notes <chuỗi nốt>` hoặc `/notes`", value="Tạo âm tiết & gảy nốt nhạc Đại Dương Cầm 48kHz (`Đô Rê Mi Pha Sol`, `C4 E4 G4`, cảm âm `1 2 3 5 6`, hợp âm `Cmaj Am`).", inline=False)
+        embed.add_field(name="`!n compose [chủ đề]` hoặc `/piano_compose`", value="Nhờ Neneka sáng tác hoặc độc tấu dương cầm (Canon in D, River Flows in You, Howl's Moving Castle...).", inline=False)
         embed.add_field(name="`!n sing [chủ đề]` hoặc `/sing`", value="Yêu cầu Neneka cất giọng hát bài ngẫu nhiên theo phong cách Nhật Bản.", inline=False)
         embed.add_field(name="`!n join` & `!n leave`", value="Mời Neneka vào hoặc rời phòng thoại (Voice Channel).", inline=False)
         embed.add_field(name="`!n quote` & `!n radio`", value="Phát câu thoại kinh điển gốc hoặc lời chào ngẫu nhiên trong Voice.", inline=False)
@@ -1186,6 +1190,46 @@ class ChatCog(commands.Cog):
                 embed.set_footer(text="Seven Crowns Real-Time Geo • Princess Connect! Re:Dive")
                 await message.reply(embed=embed)
                 return
+
+        # 5.8 Kiểm tra nếu người dùng yêu cầu tạo âm tiết / đánh nốt nhạc hoặc tìm bài nhạc tiếng Piano tự nhiên
+        note_match = re.search(
+            r"(?:tạo\s+âm\s+tiết|đánh\s+nốt|gảy\s+nốt|chơi\s+nốt|đàn\s+nốt|cảm\s+âm\s+piano)\s*[:\-]?\s*(.+)",
+            clean_content,
+            re.IGNORECASE,
+        )
+        if note_match:
+            voice_cog = self.bot.get_cog("VoiceCog")
+            if voice_cog:
+                async with message.channel.typing():
+                    gid = await voice_cog._auto_join_user_voice(message.guild, message.author)
+                    wav_path, p_embed = await voice_cog.handle_piano_notes(
+                        note_match.group(1).strip(), tempo=108, guild_id=gid
+                    )
+                    await message.reply(
+                        embed=p_embed,
+                        file=discord.File(wav_path, filename="neneka_piano_notes.wav"),
+                    )
+                    return
+
+        piano_search_match = re.search(
+            r"(?:tìm\s+(?:kiếm\s+)?(?:bài\s+)?(?:nhạc\s+)?(?:tiếng\s+)?piano|mở\s+(?:bài\s+)?(?:nhạc\s+)?piano|phát\s+(?:bài\s+)?(?:nhạc\s+)?piano|bật\s+(?:nhạc\s+)?piano|đánh\s+đàn\s+piano(?:\s+bài)?|độc\s+tấu\s+piano(?:\s+bài)?)\s*[:\-]?\s*(.*)",
+            clean_content,
+            re.IGNORECASE,
+        )
+        if piano_search_match:
+            voice_cog = self.bot.get_cog("VoiceCog")
+            if voice_cog:
+                async with message.channel.typing():
+                    gid = await voice_cog._auto_join_user_voice(message.guild, message.author)
+                    raw_q = piano_search_match.group(1).strip() or "River Flows in You"
+                    audio_path, fname, p_embed, p_view = await voice_cog.handle_piano_search(raw_q, guild_id=gid)
+                    reply_kwargs = {"embed": p_embed}
+                    if audio_path and os.path.exists(audio_path):
+                        reply_kwargs["file"] = discord.File(audio_path, filename=fname)
+                    if p_view:
+                        reply_kwargs["view"] = p_view
+                    await message.reply(**reply_kwargs)
+                    return
 
         # 6. Kiểm tra nếu người dùng yêu cầu Neneka hát trong hội thoại tự nhiên
         if is_singing_request(clean_content):

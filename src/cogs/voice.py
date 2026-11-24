@@ -1,7 +1,9 @@
 # src/cogs/voice.py
+import asyncio
 import os
 import random
-from typing import Optional, Tuple, Dict, Any
+import re
+from typing import Optional, Tuple, Dict, Any, List
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -9,6 +11,17 @@ from discord.ext import commands
 from src.voice.japanese_tts import japanese_tts, EMOTION_PRESETS
 from src.voice.voice_channel import voice_channel_mgr
 from src.voice.song_manager import get_song_by_theme_or_random, create_song_embed
+from src.voice.piano_engine import (
+    parse_note_sequence,
+    synthesize_piano_events_to_wav,
+    compose_and_render_piano_melody,
+    BUILTIN_PIANO_PIECES,
+)
+from src.voice.piano_search import (
+    search_piano_songs,
+    download_piano_track_audio,
+    format_duration_mmss,
+)
 from src.llm.groq_client import GroqClient
 from src.personality.engine import PersonalityEngine
 
@@ -22,10 +35,124 @@ RADIO_LINES = [
     ("無理は禁物よ。少し私のそばで休みましょう。", "Affectionate")
 ]
 
+
+def build_piano_track_embed(
+    selected_track: Dict[str, Any],
+    all_tracks: List[Dict[str, Any]],
+    query: str,
+) -> discord.Embed:
+    """Tạo Embed hiển thị bản nhạc Piano đang phát và danh sách kết quả tìm kiếm."""
+    dur_str = format_duration_mmss(selected_track.get("duration_sec", 0))
+    mode_tag = "Full Track" if selected_track.get("is_full_track") else "Audio Stream"
+
+    embed = discord.Embed(
+        title=f"🎹 {selected_track.get('title', 'Bản Nhạc Piano')}",
+        description=(
+            f"👤 **Nghệ sĩ:** {selected_track.get('artist', 'Unknown Pianist')}\n"
+            f"💿 **Album:** {selected_track.get('album') or 'Solo Piano Collection'}\n"
+            f"⏱️ **Thời lượng gốc:** `{dur_str}` • **Nguồn:** `{selected_track.get('source', 'Piano Cloud')}` ({mode_tag})\n"
+            f"🔗 [Mở Bản Đầy Đủ]({selected_track.get('page_url')}) • [Tìm Trên YouTube Piano]({selected_track.get('youtube_url')})"
+        ),
+        color=0x9b59b6,
+    )
+    if selected_track.get("artwork_url"):
+        embed.set_thumbnail(url=selected_track["artwork_url"])
+
+    if len(all_tracks) > 1:
+        lines = []
+        for idx, t in enumerate(all_tracks[:5], start=1):
+            t_dur = format_duration_mmss(t.get("duration_sec", 0))
+            marker = "▶️" if t is selected_track else f"`{idx}.`"
+            lines.append(f"{marker} **{t['title'][:45]}** — *{t['artist'][:28]}* (`{t_dur}`)")
+        embed.add_field(
+            name=f"🎼 Các Bản Piano Tìm Thấy Cho '{query}' (Chọn bên dưới để đổi bài)",
+            value="\n".join(lines),
+            inline=False,
+        )
+
+    embed.set_footer(text="Neneka Global Piano Search & Concert Hall")
+    return embed
+
+
+def build_piano_synth_embed(meta: Dict[str, Any], subtitle: str = "") -> discord.Embed:
+    """Tạo Embed hiển thị thông tin bản nhạc / chuỗi âm tiết Piano vừa được tổng hợp."""
+    title = meta.get("title") or "Khúc Độc Tấu Đại Dương Cầm (48kHz Stereo)"
+    embed = discord.Embed(
+        title=f"🎹 {title}",
+        description=subtitle or "Giai điệu vừa được tổng hợp trực tiếp trên đàn Concert Grand Piano của ta ✨",
+        color=0x8e44ad,
+    )
+    embed.add_field(name="🎼 Bản Phổ Nốt / Âm Tiết", value=f"`{meta.get('sheet_preview', 'C4 D4 E4 G4')}`", inline=False)
+    embed.add_field(name="⏱️ Thời Lượng", value=f"`{meta.get('duration_sec', 0)} giây`", inline=True)
+    embed.add_field(name="🎚️ Nhịp Độ (Tempo)", value=f"`{meta.get('tempo_bpm', 108)} BPM`", inline=True)
+    if meta.get("notes_played"):
+        embed.add_field(name="🎹 Số Phím Ngân", value=f"`{meta['notes_played']} phím`", inline=True)
+    embed.set_footer(text=f"{meta.get('engine', 'Concert Grand Piano 48kHz Synth')} • Phát trực tiếp trên Chat & Voice")
+    return embed
+
+
+class PianoTrackSelect(discord.ui.Select):
+    """Menu thả xuống cho phép người dùng chọn phát bất kỳ bản Piano nào trong danh sách tìm được."""
+
+    def __init__(self, tracks: List[Dict[str, Any]], query: str, guild_id: Optional[int]):
+        self.tracks = tracks[:5]
+        self.query = query
+        self.guild_id = guild_id
+        options = [
+            discord.SelectOption(
+                label=f"{idx}. {t['title'][:85]}",
+                description=f"{t['artist'][:50]} • {format_duration_mmss(t.get('duration_sec', 0))}"[:100],
+                value=str(idx - 1),
+                emoji="🎹",
+            )
+            for idx, t in enumerate(self.tracks, start=1)
+        ]
+        super().__init__(
+            placeholder="🎹 Chọn một phiên bản Piano khác để nghe ngay...",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        idx = int(self.values[0])
+        chosen = self.tracks[idx]
+        audio_path = await download_piano_track_audio(chosen)
+        embed = build_piano_track_embed(chosen, self.tracks, self.query)
+
+        if audio_path and os.path.exists(audio_path):
+            if self.guild_id:
+                vc = voice_channel_mgr.get_voice_client(self.guild_id)
+                if vc and vc.is_connected():
+                    await voice_channel_mgr.enqueue_audio(self.guild_id, audio_path)
+            ext = chosen.get("audio_ext", "mp3")
+            d_file = discord.File(audio_path, filename=f"neneka_piano_{idx + 1}.{ext}")
+            await interaction.followup.send(embed=embed, file=d_file)
+        else:
+            await interaction.followup.send(embed=embed)
+
+
+class PianoTrackSelectView(discord.ui.View):
+    def __init__(self, tracks: List[Dict[str, Any]], query: str, guild_id: Optional[int]):
+        super().__init__(timeout=180)
+        if len(tracks) > 1:
+            self.add_item(PianoTrackSelect(tracks, query, guild_id))
+
+
 class VoiceCog(commands.Cog):
-    """Quản lý kết nối phòng thoại Discord và hệ thống Japanese TTS (hỗ trợ cả Slash Commands và Prefix Commands !n)"""
+    """Quản lý kết nối phòng thoại Discord, Japanese TTS và Hệ thống Âm nhạc Đại Dương Cầm (Piano Synth & Global Search)"""
     def __init__(self, bot):
         self.bot = bot
+
+    async def _auto_join_user_voice(self, guild: Optional[discord.Guild], member) -> Optional[int]:
+        """Tự động vào phòng thoại của người dùng nếu họ đang ở trong Voice Channel."""
+        if not guild or not member or not getattr(member, "voice", None) or not member.voice.channel:
+            return guild.id if guild else None
+        vc = voice_channel_mgr.get_voice_client(guild.id)
+        if not vc or not vc.is_connected():
+            await voice_channel_mgr.join_channel(member.voice.channel)
+        return guild.id
 
     async def _handle_speak(self, text: str, emotion: str = "Normal", guild_id: Optional[int] = None):
         """Hàm dùng chung xử lý dịch câu thoại, sinh âm thanh Fish Audio và đẩy vào Voice Channel"""
@@ -47,7 +174,6 @@ class VoiceCog(commands.Cog):
         if not audio_file or not os.path.exists(audio_file):
             return None, ja_text, is_ja
 
-        # Phát trên Voice Channel nếu bot đang trong phòng thoại của guild
         if guild_id:
             vc = voice_channel_mgr.get_voice_client(guild_id)
             if vc and vc.is_connected():
@@ -67,7 +193,6 @@ class VoiceCog(commands.Cog):
 
         audio_file = await japanese_tts.generate_speech(lyrics, emotion=emotion)
 
-        # Phát vào Voice Channel nếu bot đang kết nối phòng thoại
         if guild_id and audio_file and os.path.exists(audio_file):
             vc = voice_channel_mgr.get_voice_client(guild_id)
             if vc and vc.is_connected():
@@ -75,9 +200,144 @@ class VoiceCog(commands.Cog):
 
         return audio_file, song
 
+    async def handle_piano_notes(
+        self,
+        sequence_or_theme: str,
+        tempo: int = 108,
+        guild_id: Optional[int] = None,
+    ) -> Tuple[str, discord.Embed]:
+        """
+        Tạo âm tiết / đánh chuỗi nốt nhạc Piano:
+        - Nếu đầu vào là chuỗi nốt/âm tiết (Đô Rê Mi..., C4 D4 E4..., cảm âm 1 2 3 5 6, hợp âm Cmaj Am): tổng hợp trực tiếp.
+        - Nếu đầu vào là lời mô tả chủ đề/tên bài: nhờ AI soạn nốt và tổng hợp trên đàn Grand Piano 48kHz.
+        """
+        events = parse_note_sequence(sequence_or_theme)
+        # Kiểm tra xem chuỗi có thực sự chứa nốt nhạc hợp lệ không
+        valid_note_events = [e for e in events if e[0]]
+        if len(valid_note_events) >= 1 and len(valid_note_events) >= len(sequence_or_theme.split()) * 0.4:
+            wav_path, meta = await asyncio.to_thread(synthesize_piano_events_to_wav, events, tempo)
+            meta["title"] = "Tổng Hợp Âm Tiết Đại Dương Cầm"
+            meta["engine"] = "Concert Grand Piano 48kHz Synth"
+            subtitle = f"Chuỗi âm tiết cậu yêu cầu: `{sequence_or_theme[:120]}` 🎹"
+        else:
+            wav_path, meta = await compose_and_render_piano_melody(
+                sequence_or_theme, groq_client=groq_client, prefer_lyria=False
+            )
+            subtitle = f"Biên soạn & độc tấu theo chủ đề: *{sequence_or_theme[:120]}* 🎹"
+
+        if guild_id and os.path.exists(wav_path):
+            vc = voice_channel_mgr.get_voice_client(guild_id)
+            if vc and vc.is_connected():
+                await voice_channel_mgr.enqueue_audio(guild_id, wav_path)
+
+        embed = build_piano_synth_embed(meta, subtitle=subtitle)
+        return wav_path, embed
+
+    async def handle_piano_search(
+        self,
+        query: str,
+        guild_id: Optional[int] = None,
+    ) -> Tuple[Optional[str], str, discord.Embed, Optional[discord.ui.View]]:
+        """
+        Tìm kiếm toàn bộ bài nhạc tiếng Piano trên thế giới (Deezer + Apple Music/iTunes + Internet Archive).
+        Nếu offline hoặc bài quá hiếm không có bản thu sẵn, tự động chuyển sang độc tấu bằng bộ Grand Piano Synth!
+        Trả về: (audio_path, filename, embed, view)
+        """
+        tracks = await search_piano_songs(query, limit=5)
+        if tracks:
+            chosen = None
+            audio_path = None
+            for candidate in tracks:
+                dl = await download_piano_track_audio(candidate)
+                if dl and os.path.exists(dl):
+                    chosen = candidate
+                    audio_path = dl
+                    break
+
+            if chosen and audio_path:
+                if guild_id:
+                    vc = voice_channel_mgr.get_voice_client(guild_id)
+                    if vc and vc.is_connected():
+                        await voice_channel_mgr.enqueue_audio(guild_id, audio_path)
+                ext = chosen.get("audio_ext", "mp3")
+                embed = build_piano_track_embed(chosen, tracks, query)
+                view = PianoTrackSelectView(tracks, query, guild_id) if len(tracks) > 1 else None
+                return audio_path, f"neneka_piano.{ext}", embed, view
+
+        # Fallback: Tự độc tấu bản nhạc đó trên đàn Grand Piano 48kHz của Neneka!
+        wav_path, meta = await compose_and_render_piano_melody(
+            query, groq_client=groq_client, prefer_lyria=True
+        )
+        if guild_id and os.path.exists(wav_path):
+            vc = voice_channel_mgr.get_voice_client(guild_id)
+            if vc and vc.is_connected():
+                await voice_channel_mgr.enqueue_audio(guild_id, wav_path)
+        ext = "mp3" if wav_path.lower().endswith(".mp3") else "wav"
+        embed = build_piano_synth_embed(
+            meta,
+            subtitle=f"Không tìm thấy bản thu thương mại khớp `{query}`, nên ta tự dạo bản Piano này tặng cậu luôn nhé 🎹✨",
+        )
+        return wav_path, f"neneka_piano_solo.{ext}", embed, None
+
     # =========================================================================
     # SLASH COMMANDS
     # =========================================================================
+    @app_commands.command(name="piano", description="🎹 Tìm kiếm và phát bất kỳ bài nhạc tiếng Piano nào (Anime, Cổ điển, V-Pop, J-Pop...)")
+    @app_commands.describe(query="Tên bài hát, bản nhạc hoặc nghệ sĩ Piano cần tìm (ví dụ: River Flows in You, Unravel, Suzume, Chopin...)")
+    async def cmd_piano(self, interaction: discord.Interaction, query: str):
+        await interaction.response.defer()
+        guild_id = await self._auto_join_user_voice(interaction.guild, interaction.user)
+        audio_path, fname, embed, view = await self.handle_piano_search(query, guild_id=guild_id)
+
+        send_kwargs: Dict[str, Any] = {"embed": embed}
+        if audio_path and os.path.exists(audio_path):
+            send_kwargs["file"] = discord.File(audio_path, filename=fname)
+        if view:
+            send_kwargs["view"] = view
+        await interaction.followup.send(**send_kwargs)
+
+    @app_commands.command(name="notes", description="🎼 Tạo âm tiết & đánh chuỗi nốt nhạc trên đàn Đại Dương Cầm 48kHz")
+    @app_commands.describe(
+        sequence="Chuỗi âm tiết/nốt nhạc (VD: 'Đô Rê Mi Pha Sol La Si Đô5', 'C4 E4 G4 C5', cảm âm '1 1 5 5 6 6 5', hợp âm 'Cmaj Am F G')",
+        tempo="Nhịp độ BPM (từ 40 đến 240, mặc định 108)"
+    )
+    async def cmd_notes(
+        self,
+        interaction: discord.Interaction,
+        sequence: str,
+        tempo: Optional[int] = 108,
+    ):
+        await interaction.response.defer()
+        guild_id = await self._auto_join_user_voice(interaction.guild, interaction.user)
+        wav_path, embed = await self.handle_piano_notes(sequence, tempo=tempo or 108, guild_id=guild_id)
+        d_file = discord.File(wav_path, filename="neneka_piano_notes.wav")
+        await interaction.followup.send(embed=embed, file=d_file)
+
+    @app_commands.command(name="piano_compose", description="✨ Nhờ Neneka sáng tác hoặc độc tấu một bản nhạc Piano theo chủ đề/tâm trạng")
+    @app_commands.describe(
+        theme="Chủ đề cảm xúc hoặc tên tác phẩm kinh điển (VD: Canon in D, đêm mưa buồn, Howl's Moving Castle, Clair de Lune...)",
+        ai_studio="Thử dùng Google Lyria 3 Studio AI nếu khả dụng (mặc định: Tự động)"
+    )
+    async def cmd_piano_compose(
+        self,
+        interaction: discord.Interaction,
+        theme: str,
+        ai_studio: Optional[bool] = True,
+    ):
+        await interaction.response.defer()
+        guild_id = await self._auto_join_user_voice(interaction.guild, interaction.user)
+        out_path, meta = await compose_and_render_piano_melody(
+            theme, groq_client=groq_client, prefer_lyria=bool(ai_studio)
+        )
+        if guild_id and os.path.exists(out_path):
+            vc = voice_channel_mgr.get_voice_client(guild_id)
+            if vc and vc.is_connected():
+                await voice_channel_mgr.enqueue_audio(guild_id, out_path)
+
+        ext = "mp3" if out_path.lower().endswith(".mp3") else "wav"
+        embed = build_piano_synth_embed(meta, subtitle=f"Độc tấu dương cầm theo yêu cầu: *{theme}* 🎹💜")
+        await interaction.followup.send(embed=embed, file=discord.File(out_path, filename=f"neneka_solo.{ext}"))
+
     @app_commands.command(name="join", description="🔊 Mời Neneka tham gia phòng thoại (Voice Channel) của bạn")
     async def cmd_join(self, interaction: discord.Interaction):
         if not interaction.user.voice or not interaction.user.voice.channel:
@@ -130,13 +390,7 @@ class VoiceCog(commands.Cog):
     @app_commands.describe(theme="Chủ đề hoặc phong cách bài hát (ví dụ: ru ngủ, tình yêu, hoa anh đào, landosol, vui tươi...)")
     async def cmd_sing(self, interaction: discord.Interaction, theme: Optional[str] = None):
         await interaction.response.defer()
-        guild_id = interaction.guild.id if interaction.guild else None
-
-        # Tự động tham gia phòng thoại nếu người dùng đang trong phòng thoại
-        if interaction.guild and interaction.user.voice and interaction.user.voice.channel:
-            vc = voice_channel_mgr.get_voice_client(guild_id)
-            if not vc or not vc.is_connected():
-                await voice_channel_mgr.join_channel(interaction.user.voice.channel)
+        guild_id = await self._auto_join_user_voice(interaction.guild, interaction.user)
 
         audio_file, song = await self._handle_sing(theme=theme, guild_id=guild_id)
         if not audio_file:
@@ -181,7 +435,6 @@ class VoiceCog(commands.Cog):
             await interaction.followup.send("❌ Không tìm thấy file âm thanh câu thoại của Neneka.")
             return
 
-        # Phát vào Voice Channel nếu đang kết nối
         if interaction.guild:
             vc = voice_channel_mgr.get_voice_client(interaction.guild.id)
             if vc and vc.is_connected():
@@ -212,21 +465,79 @@ class VoiceCog(commands.Cog):
     @app_commands.command(name="voice_settings", description="⚙️ Xem cấu hình chất giọng tiếng Nhật hiện tại của Neneka")
     async def cmd_voice_settings(self, interaction: discord.Interaction):
         embed = discord.Embed(
-            title="🎙️ Cấu Hình Voice Japanese Neneka",
+            title="🎙️ Cấu Hình Voice & Âm Nhạc Neneka",
             description=(
                 f"**Mô hình giọng:** `{japanese_tts.voice_id}`\n"
                 f"**Định dạng đầu ra:** `{japanese_tts.get_audio_format().upper()}`\n"
                 f"**Cao độ mặc định (Pitch):** `{japanese_tts.default_pitch}`\n"
                 f"**Tốc độ mặc định (Speed):** `{japanese_tts.default_speed}`\n"
-                f"**Số preset cảm xúc:** {len(EMOTION_PRESETS)} kiểu biểu cảm"
+                f"**Số preset cảm xúc:** {len(EMOTION_PRESETS)} kiểu biểu cảm\n"
+                f"**Bộ đàn Piano:** `Concert Grand Piano 48kHz Stereo Synth + Global Piano Search`"
             ),
             color=0x9b59b6
         )
         await interaction.response.send_message(embed=embed)
 
     # =========================================================================
-    # PREFIX COMMANDS (!n speak, n!speak, !n join, !n leave, !n radio, !n quote)
+    # PREFIX COMMANDS (!n piano, !n notes, !n compose, !n speak, !n sing, !n join, !n leave...)
     # =========================================================================
+    @commands.command(name="piano", aliases=["nhacpiano", "timpiano", "playpiano"])
+    async def pcmd_piano(self, ctx: commands.Context, *, query: Optional[str] = None):
+        """Tìm kiếm và phát bài nhạc tiếng Piano toàn cầu: !n piano <tên bài / nghệ sĩ>"""
+        if not query or not query.strip():
+            sample_list = ", ".join(f"`{p['title'].split('—')[0].strip()}`" for p in BUILTIN_PIANO_PIECES.values())
+            await ctx.reply(
+                "🎹 Cậu muốn tìm nghe bản nhạc Piano nào? Hãy gõ `!n piano <tên bài>` nhé!\n"
+                "*Ví dụ:* `!n piano River Flows in You`, `!n piano Suzume`, `!n piano Chopin Nocturne`\n"
+                f"*Hoặc tạo âm tiết nốt nhạc:* `!n notes Đô Rê Mi Pha Sol La Si Đô5`\n"
+                f"*Bản độc tấu có sẵn:* {sample_list}"
+            )
+            return
+
+        guild_id = await self._auto_join_user_voice(ctx.guild, ctx.author)
+        async with ctx.typing():
+            audio_path, fname, embed, view = await self.handle_piano_search(query.strip(), guild_id=guild_id)
+            send_kwargs: Dict[str, Any] = {"embed": embed}
+            if audio_path and os.path.exists(audio_path):
+                send_kwargs["file"] = discord.File(audio_path, filename=fname)
+            if view:
+                send_kwargs["view"] = view
+            await ctx.reply(**send_kwargs)
+
+    @commands.command(name="notes", aliases=["amtiet", "not", "camam", "melody"])
+    async def pcmd_notes(self, ctx: commands.Context, *, sequence: Optional[str] = None):
+        """Tạo âm tiết & đánh chuỗi nốt nhạc Piano: !n notes <chuỗi nốt / cảm âm>"""
+        if not sequence or not sequence.strip():
+            await ctx.reply(
+                "🎼 Hãy nhập chuỗi âm tiết hoặc nốt nhạc cậu muốn ta gảy trên đàn Piano nhé!\n"
+                "• **Âm tiết Việt:** `!n notes Đô Rê Mi Pha Sol La Si Đô5`\n"
+                "• **Nốt quốc tế & Hợp âm:** `!n notes Cmaj Am Fmaj G7 C4+E4+G4:2`\n"
+                "• **Cảm âm số:** `!n notes 1 1 5 5 6 6 5 - 4 4 3 3 2 2 1`"
+            )
+            return
+
+        guild_id = await self._auto_join_user_voice(ctx.guild, ctx.author)
+        async with ctx.typing():
+            wav_path, embed = await self.handle_piano_notes(sequence.strip(), tempo=108, guild_id=guild_id)
+            await ctx.reply(embed=embed, file=discord.File(wav_path, filename="neneka_piano_notes.wav"))
+
+    @commands.command(name="compose", aliases=["danhdan", "docdan", "solo"])
+    async def pcmd_compose(self, ctx: commands.Context, *, theme: Optional[str] = None):
+        """Độc tấu hoặc sáng tác bản nhạc Piano theo chủ đề: !n compose <chủ đề / tên tác phẩm>"""
+        target_theme = (theme or "").strip() or random.choice(list(BUILTIN_PIANO_PIECES.values()))["title"]
+        guild_id = await self._auto_join_user_voice(ctx.guild, ctx.author)
+        async with ctx.typing():
+            out_path, meta = await compose_and_render_piano_melody(
+                target_theme, groq_client=groq_client, prefer_lyria=True
+            )
+            if guild_id and os.path.exists(out_path):
+                vc = voice_channel_mgr.get_voice_client(guild_id)
+                if vc and vc.is_connected():
+                    await voice_channel_mgr.enqueue_audio(guild_id, out_path)
+            ext = "mp3" if out_path.lower().endswith(".mp3") else "wav"
+            embed = build_piano_synth_embed(meta, subtitle=f"Độc tấu dương cầm: *{target_theme}* 🎹✨")
+            await ctx.reply(embed=embed, file=discord.File(out_path, filename=f"neneka_solo.{ext}"))
+
     @commands.command(name="speak", aliases=["s", "noi"])
     async def pcmd_speak(self, ctx: commands.Context, *, text: Optional[str] = None):
         """Lệnh prefix !n speak <nội dung> để Neneka cất giọng tiếng Nhật"""
@@ -234,14 +545,8 @@ class VoiceCog(commands.Cog):
             await ctx.reply("❌ Cậu muốn ta cất giọng nói điều gì nào? Hãy dùng cú pháp: `!n speak <nội dung>`\n*Ví dụ:* `!n speak chào buổi sáng kishi-kun` hoặc `!n speak こんにちは`")
             return
 
-        # Tự động tham gia phòng thoại nếu người dùng đang trong phòng mà bot chưa vào
-        if ctx.guild and ctx.author.voice and ctx.author.voice.channel:
-            vc = voice_channel_mgr.get_voice_client(ctx.guild.id)
-            if not vc or not vc.is_connected():
-                await voice_channel_mgr.join_channel(ctx.author.voice.channel)
-
+        guild_id = await self._auto_join_user_voice(ctx.guild, ctx.author)
         async with ctx.typing():
-            guild_id = ctx.guild.id if ctx.guild else None
             audio_file, ja_text, is_ja = await self._handle_speak(text, emotion="Normal", guild_id=guild_id)
             if not audio_file:
                 await ctx.reply("❌ Không thể tạo giọng nói vào thời điểm này.")
@@ -256,13 +561,8 @@ class VoiceCog(commands.Cog):
     @commands.command(name="sing", aliases=["hat", "song", "uta"])
     async def pcmd_sing(self, ctx: commands.Context, *, theme: Optional[str] = None):
         """Lệnh !n sing [chủ đề] để Neneka hát một bài ngẫu nhiên theo phong cách Nhật Bản"""
-        if ctx.guild and ctx.author.voice and ctx.author.voice.channel:
-            vc = voice_channel_mgr.get_voice_client(ctx.guild.id)
-            if not vc or not vc.is_connected():
-                await voice_channel_mgr.join_channel(ctx.author.voice.channel)
-
+        guild_id = await self._auto_join_user_voice(ctx.guild, ctx.author)
         async with ctx.typing():
-            guild_id = ctx.guild.id if ctx.guild else None
             audio_file, song = await self._handle_sing(theme=theme, guild_id=guild_id)
             if not audio_file:
                 await ctx.reply("❌ Không thể cất giọng hát vào thời điểm này.")
@@ -358,20 +658,5 @@ class VoiceCog(commands.Cog):
         discord_file = discord.File(quote_file, filename="neneka_official_voice.mp3")
         await ctx.reply(embed=embed, file=discord_file)
 
-    async def cmd_voice_settings(self, interaction: discord.Interaction):
-        embed = discord.Embed(
-            title="🎙️ Cấu Hình Voice Japanese Neneka",
-            description=(
-                f"**Mô hình giọng:** `{japanese_tts.voice_id}`\n"
-                f"**Định dạng đầu ra:** `{japanese_tts.get_audio_format().upper()}`\n"
-                f"**Cao độ mặc định (Pitch):** `{japanese_tts.default_pitch}`\n"
-                f"**Tốc độ mặc định (Speed):** `{japanese_tts.default_speed}`\n"
-                f"**Số preset cảm xúc:** {len(EMOTION_PRESETS)} kiểu biểu cảm"
-            ),
-            color=0x9b59b6
-        )
-        await interaction.response.send_message(embed=embed)
-
 async def setup(bot):
     await bot.add_cog(VoiceCog(bot))
-

@@ -1,6 +1,8 @@
 # src/voice/voice_channel.py
+import io
 import os
 import shutil
+import wave
 import asyncio
 import logging
 from typing import Dict, Optional, List, Tuple
@@ -12,10 +14,11 @@ logger = logging.getLogger("Neneka.VoiceChannel")
 
 class VoiceChannelManager:
     """
-    Quản lý kết nối Voice Channel và hàng đợi phát âm thanh của Neneka
-    - Kết nối và rời Voice Channel an toàn
-    - Hàng đợi phát âm thanh (Audio Queue) tránh xung đột
-    - Sử dụng FFmpegPCMAudio khi có FFmpeg, thông báo lịch thiệp nếu thiếu binary
+    Quản lý kết nối Voice Channel và hàng đợi phát âm thanh của Neneka:
+    - Kết nối và rời Voice Channel an toàn.
+    - Hàng đợi phát âm thanh (Audio Queue) tránh xung đột.
+    - Hỗ trợ phát trực tiếp file WAV 48kHz Stereo qua `discord.PCMAudio` NGAY CẢ KHI CHƯA CÀI FFMPEG!
+    - Tự động dùng `discord.FFmpegPCMAudio` cho MP3/M4A/WAV khi máy chủ có cài FFmpeg.
     """
     def __init__(self):
         self._voice_clients: Dict[int, discord.VoiceClient] = {}  # guild_id -> VoiceClient
@@ -64,6 +67,17 @@ class VoiceChannelManager:
         if not self._is_playing.get(guild_id, False):
             asyncio.create_task(self._process_queue(guild_id))
 
+    def _build_wav_pcm_source(self, wav_path: str) -> Optional[discord.PCMAudio]:
+        """Đọc file WAV 48kHz 16-bit Stereo thành nguồn `discord.PCMAudio` không cần FFmpeg."""
+        try:
+            with wave.open(wav_path, "rb") as wf:
+                if wf.getnchannels() == 2 and wf.getsampwidth() == 2 and wf.getframerate() == 48000:
+                    pcm_bytes = wf.readframes(wf.getnframes())
+                    return discord.PCMAudio(io.BytesIO(pcm_bytes))
+        except Exception as e:
+            logger.debug(f"Không thể tạo PCMAudio trực tiếp từ WAV '{wav_path}': {e}")
+        return None
+
     async def _process_queue(self, guild_id: int):
         self._is_playing[guild_id] = True
         vc = self._voice_clients.get(guild_id)
@@ -78,9 +92,15 @@ class VoiceChannelManager:
             if not os.path.exists(audio_file):
                 continue
 
-            if not self.has_ffmpeg:
-                logger.warning("FFmpeg chưa được cài đặt trên máy chủ. Bỏ qua phát trực tiếp trên VC.")
-                break
+            source = None
+            if self.has_ffmpeg:
+                source = discord.FFmpegPCMAudio(audio_file)
+            elif audio_file.lower().endswith(".wav"):
+                source = self._build_wav_pcm_source(audio_file)
+
+            if source is None:
+                logger.warning("FFmpeg chưa được cài đặt trên máy chủ để giải mã định dạng nén (MP3/M4A). Âm thanh vẫn được gửi qua chat player.")
+                continue
 
             finished_event = asyncio.Event()
 
@@ -90,7 +110,6 @@ class VoiceChannelManager:
                 finished_event.set()
 
             try:
-                source = discord.FFmpegPCMAudio(audio_file)
                 vc.play(source, after=after_play)
                 await finished_event.wait()
             except Exception as e:
