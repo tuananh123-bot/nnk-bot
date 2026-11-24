@@ -9,9 +9,20 @@ from discord.ext import commands
 
 from src.config import settings
 from src.llm.groq_client import GroqClient
+from src.llm.fast_llm_client import fast_llm_client
 from src.llm.vision_client import vision_client
 from src.llm.venice_client import get_venice_client, get_uncensored_ai_client
 from src.llm.model_status import build_model_status_embed, get_active_models_info
+from src.utils.emoji_manager import emoji_manager
+from src.utils.media_extractor import (
+    extract_code_attachments,
+    format_code_files_for_prompt,
+    detect_coding_intent,
+    extract_image_or_gif_from_message,
+    message_has_media_or_code,
+    strip_gif_urls_from_text,
+    split_discord_message_preserving_code,
+)
 from src.personality.engine import PersonalityEngine
 from src.memory.engine import MemoryEngine
 from src.bond.engine import BondEngine
@@ -51,10 +62,10 @@ def sanitize_neneka_reply(reply: str) -> str:
         else:
             break
     sanitized = "\n".join(lines).strip()
-    # Nếu câu bị cụt lủn hoặc chỉ gồm các từ cảm thán đơn lẻ
+    # Chỉ thay thế khi câu trả lời hoàn toàn rỗng hoặc chỉ toàn từ đệm bị lỗi cắt cụt
     clean_words = [w for w in re.split(r'[\s.,!?…*~]+', sanitized.lower()) if w]
-    if len(sanitized) < 15 or (clean_words and all(w in {"hửm", "ara", "fufu", "chà", "a", "ừm"} for w in clean_words)):
-        sanitized = "*mỉm cười điềm đạm, đôi mắt tím ánh lên nét dịu dàng* Fufu... Ta đang lắng nghe đây. Cậu có điều gì muốn chia sẻ cùng ta sao?"
+    if not sanitized or (clean_words and all(w in {"hửm", "ara", "chà", "a"} for w in clean_words)):
+        sanitized = "Sao thế cậu? Nói rõ hơn chút cho ta nghe xem nào 😄"
     return sanitized
 
 def is_ai_refusal(text: str) -> bool:
@@ -135,6 +146,13 @@ class ChatCog(commands.Cog):
 
         return reply
 
+    async def _send_smart_chunks(self, send_fn, text: str):
+        """Gửi tin nhắn dài (đặc biệt là code dài > 2000 ký tự) thành nhiều phần mượt mà không vỡ khối ```code```."""
+        chunks = split_discord_message_preserving_code(text, limit=1950)
+        for chunk in chunks:
+            if chunk.strip():
+                await send_fn(chunk)
+
     async def _generate_neneka_reply(
         self,
         user_message: str,
@@ -142,13 +160,16 @@ class ChatCog(commands.Cog):
         username: str,
         guild_id: Optional[str],
         channel_id: str,
-        image_data: Optional[Tuple[bytes, str]] = None
+        image_data: Optional[Tuple[bytes, str]] = None,
+        media_hint: Optional[str] = None,
+        code_files: Optional[list] = None,
     ) -> str:
-        """Tạo phản hồi chuẩn mực cho Neneka kết hợp Ký ức, Tính cách, Groq LLM hoặc Gemini Vision"""
-        # 1. Phát hiện ngôn ngữ và quyền của Đấng Sáng Tạo (Creator)
+        """Tạo phản hồi nhanh cho Neneka kết hợp Đọc/Viết Code, Đọc GIF/Vision, Custom Emoji và Ký ức."""
+        # 1. Phát hiện ngôn ngữ, ý định code và quyền của Đấng Sáng Tạo (Creator)
         lang = personality_engine.detect_language(user_message)
         is_creator = (str(discord_user_id) == str(settings.CREATOR_USER_ID))
         is_max_bond = (str(discord_user_id) in settings.max_bond_user_id_list)
+        is_coding = detect_coding_intent(user_message, has_code_files=bool(code_files))
 
         # 1b. Kiểm tra kênh NSFW
         is_nsfw = False
@@ -160,8 +181,12 @@ class ChatCog(commands.Cog):
             if ch_id_int in settings.nsfw_channel_id_list or ch_id_int in _nsfw_runtime_channels:
                 is_nsfw = True
 
-        # 2. Truy xuất Ký ức có chọn lọc (không đổ cả database)
-        mem_ctx = await memory_engine.get_memory_context(discord_user_id, user_message)
+        # 2. Truy xuất song song Ký ức + Bond + Vị trí để giảm độ trễ tối đa (3x faster DB I/O)
+        mem_ctx, bond_info, user_loc = await asyncio.gather(
+            memory_engine.get_memory_context(discord_user_id, user_message),
+            bond_engine.get_bond_info(discord_user_id),
+            memory_engine.get_user_location(discord_user_id),
+        )
         preferred_name = mem_ctx["preferred_name"]
 
         # Nhận diện Đấng Sáng Tạo hoặc Max Bond hoặc CHOSEN_ONE_NAME
@@ -172,11 +197,9 @@ class ChatCog(commands.Cog):
         elif settings.CHOSEN_ONE_NAME and settings.CHOSEN_ONE_NAME.lower() in username.lower():
             preferred_name = settings.CHOSEN_ONE_NAME
 
-        # 3. Lấy thông tin Bond
-        bond_info = await bond_engine.get_bond_info(discord_user_id)
         salutation = "Sheffy-sama" if is_creator else bond_info["salutation"]
 
-        # 4. Cập nhật trạng thái tính cách dựa trên tin nhắn (bao gồm dâm dục và hứng cảm)
+        # 3. Cập nhật trạng thái tính cách dựa trên tin nhắn
         personality_engine.update_from_interaction(
             user_message,
             is_creator=is_creator,
@@ -184,7 +207,7 @@ class ChatCog(commands.Cog):
             is_nsfw=is_nsfw
         )
 
-        # 5. Xây dựng System Prompt kết hợp (kèm trang phục hiện tại)
+        # 4. Xây dựng System Prompt kết hợp (Trang phục + Chế độ Code + Kho Custom Emoji từ server 413766882277982228)
         current_costume = costume_mgr.get_current_costume(discord_user_id)
         base_system_prompt = personality_engine.get_system_prompt(
             user_language=lang,
@@ -192,12 +215,26 @@ class ChatCog(commands.Cog):
             is_creator=is_creator,
             is_max_bond=is_max_bond,
             is_nsfw=is_nsfw,
-            costume=current_costume
+            costume=current_costume,
+            is_coding=is_coding,
+        )
+        emoji_guide = emoji_manager.build_emoji_prompt_guide(
+            self.bot,
+            current_guild_id=guild_id,
+            is_coding=is_coding,
         )
 
-        # Ngữ cảnh thời gian và thời tiết thực tế tại Việt Nam (UTC+7)
-        user_loc = await memory_engine.get_user_location(discord_user_id)
-        vietnam_context = await get_vietnam_context_for_prompt(user_message, user_location=user_loc)
+        # 5. Ngữ cảnh thời gian Việt Nam (0ms) — chỉ gọi HTTP thời tiết khi tin nhắn thực sự hỏi về thời tiết!
+        lower_q = user_message.lower()
+        asks_weather = any(
+            kw in lower_q
+            for kw in ("thời tiết", "nhiệt độ", "trời mưa", "có mưa", "nắng", "lạnh", "nóng", "weather", "bao nhiêu độ")
+        )
+        if asks_weather:
+            vietnam_context = await get_vietnam_context_for_prompt(user_message, user_location=user_loc)
+        else:
+            t_info = get_vietnam_time_info()
+            vietnam_context = f"### THỜI GIAN HIỆN TẠI (VIỆT NAM UTC+7): {t_info['formatted_summary']}"
 
         memory_section = ""
         if mem_ctx["relevant_facts"]:
@@ -208,51 +245,87 @@ class ChatCog(commands.Cog):
             history_messages.append({"role": "user", "content": h["user"]})
             history_messages.append({"role": "assistant", "content": h["neneka"]})
 
-        full_system_prompt = f"{base_system_prompt}\n\n{vietnam_context}\n{memory_section}"
+        full_system_prompt = f"{base_system_prompt}{emoji_guide}\n\n{vietnam_context}\n{memory_section}"
 
-        # 6. Gọi Model: Nếu có ảnh thì dùng Gemini Multimodal Vision, nếu không thì dùng Groq LLM
+        # Ghép nội dung file code đính kèm hoặc gợi ý GIF/Sticker vào lời nhắn gửi tới LLM
+        effective_user_prompt = user_message
+        if code_files:
+            formatted_code = format_code_files_for_prompt(code_files)
+            if effective_user_prompt.strip():
+                effective_user_prompt = f"{effective_user_prompt}\n\n{formatted_code}"
+            else:
+                effective_user_prompt = f"Hãy đọc, phân tích file code dưới đây và kiểm tra xem có lỗi hay điểm nào cần tối ưu không:\n\n{formatted_code}"
+        elif media_hint and not image_data:
+            effective_user_prompt = f"[{media_hint}]\n{effective_user_prompt}".strip()
+
+        # 6. Gọi Model: Ảnh/GIF -> Vision; Đọc/Viết Code -> Fast Coding Engine; Chat -> Ultra-Fast / NSFW Engine
         if image_data:
             image_bytes, mime_type = image_data
             try:
                 reply = await vision_client.analyze_image(
                     image_bytes=image_bytes,
                     mime_type=mime_type,
-                    user_prompt=user_message,
-                    system_instruction=full_system_prompt
+                    user_prompt=effective_user_prompt,
+                    system_instruction=full_system_prompt,
+                    media_hint=media_hint,
                 )
             except Exception as e:
-                logger.error(f"Lỗi khi gọi Gemini Vision: {e}")
-                reply = "*nheo nhẹ đôi mắt tím, quyền trượng Metamorphose khẽ lay động* Fufu... Khúc xạ quang học trên bức ảnh này có chút mờ ảo, ta chưa thể nhìn thấu được. Cậu thử gửi lại xem nào?"
+                logger.error(f"Lỗi khi gọi Gemini Vision/GIF: {e}")
+                reply = "Ảnh hoặc GIF này hơi mờ nên ta chưa nhìn rõ lắm, cậu gửi lại thử xem nhé 😅"
         else:
             messages = [{"role": "system", "content": full_system_prompt}]
             messages.extend(history_messages)
-            messages.append({"role": "user", "content": user_message})
+            messages.append({"role": "user", "content": effective_user_prompt})
 
             try:
                 reply = None
-                is_nsfw_msg = personality_engine.detect_nsfw_intent(user_message)
+                is_nsfw_msg = (not is_coding) and personality_engine.detect_nsfw_intent(user_message)
 
-                if is_nsfw:
+                if is_coding:
+                    # Chế độ Đọc & Viết Code Free Nhanh (Codestral -> Cerebras -> OpenRouter Coder -> Groq -> Gemini)
+                    logger.info("💻 Phát hiện yêu cầu Đọc/Viết Code. Khởi chạy Fast Coding Engine...")
+                    reply = await fast_llm_client.generate_code_response(
+                        messages,
+                        groq_client=groq_client,
+                        temperature=0.3,
+                        max_tokens=2800,
+                    )
+                elif is_nsfw:
                     if is_nsfw_msg:
-                        # Người dùng nói lời 18+ / nhạy cảm trong kênh NSFW: Gọi trực tiếp Bot NSFW
-                        logger.info("Phát hiện nội dung 18+/NSFW trong kênh NSFW. Khởi chạy Bot NSFW (NoTrack / Uncensored AI)...")
+                        logger.info("Phát hiện nội dung 18+/NSFW trong kênh NSFW. Khởi chạy Bot NSFW...")
                         reply = await self._call_nsfw_bot(messages)
                     else:
-                        # Người dùng nói lời thông thường trong kênh NSFW: Chạy Bot Thường trước!
-                        logger.info("Lời thoại thông thường trong kênh NSFW. Khởi chạy Bot Thường (Groq) trước...")
+                        logger.info("Lời thoại thông thường trong kênh NSFW. Khởi chạy Fast Normal Bot trước...")
                         try:
-                            resp = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
+                            resp = await fast_llm_client.try_ultra_fast_external_chat(
+                                messages, temperature=0.78, max_tokens=750
+                            )
+                            if not resp:
+                                resp = await groq_client.chat_completion(messages, temperature=0.78, max_tokens=750)
                             if is_ai_refusal(resp):
-                                logger.warning("Bot Thường từ chối phản hồi do chính sách an toàn. Tự động chuyển tiếp sang Bot NSFW...")
+                                logger.warning("Bot Thường từ chối an toàn. Tự động chuyển sang Bot NSFW...")
                                 reply = await self._call_nsfw_bot(messages)
                             else:
                                 reply = resp
                         except Exception as e_groq:
-                            logger.warning(f"Bot Thường gặp lỗi ({e_groq}). Tự động chuyển tiếp sang Bot NSFW...")
+                            logger.warning(f"Bot Thường gặp lỗi ({e_groq}). Tự động chuyển sang Bot NSFW...")
                             reply = await self._call_nsfw_bot(messages)
                 else:
-                    # Kênh thông thường: Chạy Bot Thường
-                    reply = await groq_client.chat_completion(messages, temperature=0.75, max_tokens=1200)
+                    # Kênh thông thường: Ưu tiên Ultra-Fast API (Cerebras/SambaNova nếu có) -> Groq LPU -> Gemini Flash-Lite
+                    reply = await fast_llm_client.try_ultra_fast_external_chat(
+                        messages, temperature=0.78, max_tokens=750
+                    )
+                    if not reply:
+                        try:
+                            reply = await groq_client.chat_completion(messages, temperature=0.78, max_tokens=750)
+                        except Exception as e_groq_normal:
+                            if fast_llm_client.has_gemini:
+                                logger.warning(f"Groq lỗi ({e_groq_normal}), chuyển tức thì sang Gemini Flash-Lite...")
+                                reply = await fast_llm_client.chat_gemini_fast(
+                                    messages, temperature=0.78, max_tokens=750
+                                )
+                            else:
+                                raise e_groq_normal
             except Exception as e:
                 logger.warning(f"Lỗi khi gọi LLM chính ({e}), thử dự phòng qua AI Horde Text...")
                 try:
@@ -263,21 +336,31 @@ class ChatCog(commands.Cog):
                         raise e
                 except Exception as e2:
                     logger.error(f"Tất cả LLM đều thất bại: {e2}")
-                    reply = "*khẽ nhấp ngụm trà, ánh mắt khép hờ* Fufu... Ma lực thực tại vừa có chút nhiễu loạn. Cậu nói lại xem nào?"
+                    reply = "Mạng ma thuật bên ta vừa lag nhẹ một nhịp, cậu nhắn lại giúp ta nhé 😅"
 
-        # 6.5 Làm sạch phản hồi, chống đứt đoạn hoặc ngắt dòng cụt lủn do model
+        # 6.5 Làm sạch phản hồi & đồng bộ Custom Emoji từ server 413766882277982228 (bảo toàn khối ```code```)
         reply = sanitize_neneka_reply(reply)
+        reply = emoji_manager.resolve_emojis_in_reply(reply, self.bot, current_guild_id=guild_id)
 
-        # 7. Cộng điểm Bond và cập nhật Ký ức
-        await bond_engine.add_bond_points(discord_user_id, points=2, event_type="CONVERSATION")
-        record_user_msg = f"[Hình ảnh] {user_message}" if image_data else user_message
-        await memory_engine.record_exchange(
-            discord_user_id=discord_user_id,
-            username=username,
-            channel_id=channel_id,
-            user_message=record_user_msg,
-            bot_response=reply,
-            guild_id=guild_id
+        # 7. Cộng điểm Bond và cập nhật Ký ức song song (giảm độ trễ ghi DB)
+        if image_data:
+            record_user_msg = f"[Hình ảnh/GIF] {user_message}"
+        elif code_files:
+            fnames = ", ".join(c["filename"] for c in code_files)
+            record_user_msg = f"[File Code: {fnames}] {user_message}"
+        else:
+            record_user_msg = user_message
+
+        await asyncio.gather(
+            bond_engine.add_bond_points(discord_user_id, points=2, event_type="CONVERSATION"),
+            memory_engine.record_exchange(
+                discord_user_id=discord_user_id,
+                username=username,
+                channel_id=channel_id,
+                user_message=record_user_msg,
+                bot_response=reply,
+                guild_id=guild_id,
+            ),
         )
 
         return reply
@@ -425,6 +508,104 @@ class ChatCog(commands.Cog):
                 is_nsfw = True
         embed = build_model_status_embed(is_channel_nsfw=is_nsfw)
         await ctx.reply(embed=embed)
+
+    @app_commands.command(name="code", description="💻 Nhờ Neneka viết code, đọc file code đính kèm hoặc sửa lỗi (Free & Fast)")
+    @app_commands.describe(
+        prompt="Yêu cầu viết code, sửa bug hoặc câu hỏi về lập trình",
+        file="Đính kèm file code (.py, .js, .ts, .html, .cpp, .json, .txt...) nếu cần Neneka đọc"
+    )
+    async def cmd_code(
+        self,
+        interaction: discord.Interaction,
+        prompt: str,
+        file: Optional[discord.Attachment] = None,
+    ):
+        await interaction.response.defer()
+        code_files = []
+        if file:
+            from src.utils.media_extractor import get_code_language_for_filename, decode_code_bytes
+            lang = get_code_language_for_filename(file.filename, file.content_type) or "text"
+            raw = await file.read()
+            code_files.append({
+                "filename": file.filename,
+                "language": lang,
+                "content": decode_code_bytes(raw[:45_000]).strip(),
+                "truncated": "true" if len(raw) > 45_000 else "",
+            })
+
+        reply = await self._generate_neneka_reply(
+            user_message=f"[Yêu cầu Code] {prompt}",
+            discord_user_id=str(interaction.user.id),
+            username=interaction.user.display_name,
+            guild_id=str(interaction.guild_id) if interaction.guild_id else None,
+            channel_id=str(interaction.channel_id),
+            code_files=code_files,
+        )
+        await self._send_smart_chunks(interaction.followup.send, reply)
+
+    @commands.command(name="code", aliases=["vietcode", "doccode", "fixcode", "debug"])
+    async def cmd_code_prefix(self, ctx: commands.Context, *, prompt: Optional[str] = None):
+        """Viết code, đọc file code đính kèm hoặc debug nhanh (!n code <yêu cầu>)."""
+        code_files = await extract_code_attachments(ctx.message)
+        if not prompt and not code_files:
+            await ctx.reply("Cậu gửi kèm file code hoặc mô tả bài toán cần viết/sửa nhé, ví dụ: `!n code viết hàm sắp xếp nhanh bằng Python` 💻")
+            return
+        async with ctx.typing():
+            reply = await self._generate_neneka_reply(
+                user_message=f"[Yêu cầu Code] {prompt or 'Hãy đọc và phân tích file code đính kèm này.'}",
+                discord_user_id=str(ctx.author.id),
+                username=ctx.author.display_name,
+                guild_id=str(ctx.guild.id) if ctx.guild else None,
+                channel_id=str(ctx.channel.id),
+                code_files=code_files,
+            )
+            await self._send_smart_chunks(ctx.reply, reply)
+
+    def _build_emoji_status_embed(self) -> discord.Embed:
+        info = emoji_manager.get_status_info(self.bot)
+        if info["connected"]:
+            embed = discord.Embed(
+                title=f"😄 Kho Custom Emoji Server • {info['guild_name']}",
+                description=(
+                    f"✅ **Đã kết nối thành công** tới máy chủ nguồn emoji (`{info['guild_id']}`)!\n"
+                    f"Neneka hiện có thể tự động dùng toàn bộ emoji của server này khi trò chuyện ở mọi nơi."
+                ),
+                color=0x2ecc71,
+            )
+            embed.add_field(
+                name="📊 Số Lượng Emoji Đã Nạp",
+                value=f"Tổng cộng: **{info['total_emojis']}** (`{info['static_count']}` tĩnh • `{info['animated_count']}` động GIF)",
+                inline=False,
+            )
+            if info["sample_preview"]:
+                embed.add_field(name="✨ Xem Trước Kho Emoji", value=info["sample_preview"], inline=False)
+        else:
+            invite_note = (
+                f"🔗 **Bước 1:** Đảm bảo bạn có quyền thêm bot trong server {info['server_invite']} (ID: `{info['guild_id']}`).\n"
+            )
+            if info["bot_oauth_invite"]:
+                invite_note += f"🤖 **Bước 2:** [Nhấn vào đây để mời Bot Neneka vào Server Emoji]({info['bot_oauth_invite']})\n"
+            invite_note += "✨ *Ngay sau khi bot có mặt trong server đó, Discord cho phép bot dùng toàn bộ custom emoji tĩnh & động của server ở mọi kênh chat!*"
+            embed = discord.Embed(
+                title="😄 Trạng Thái Kết Nối Server Emoji",
+                description=(
+                    f"⚠️ Bot hiện **chưa có mặt** trong máy chủ nguồn `{info['guild_id']}` ({info['server_invite']}).\n"
+                    f"*(Lưu ý cơ chế Discord: Tài khoản Bot không thể tự bấm link `discord.gg`, mà cần được mời vào server qua link OAuth2 bên dưới)*\n\n"
+                    f"{invite_note}"
+                ),
+                color=0xf39c12,
+            )
+        embed.set_footer(text=f"Emoji Source Guild ID: {info['guild_id']}")
+        return embed
+
+    @app_commands.command(name="emojis", description="😄 Kiểm tra kho Custom Emoji từ server nguồn (413766882277982228)")
+    async def cmd_emojis(self, interaction: discord.Interaction):
+        await interaction.response.send_message(embed=self._build_emoji_status_embed())
+
+    @commands.command(name="emojis", aliases=["emoji", "serveremoji"])
+    async def cmd_emojis_prefix(self, ctx: commands.Context):
+        """Kiểm tra kết nối kho Custom Emoji từ server nguồn (!n emojis)."""
+        await ctx.reply(embed=self._build_emoji_status_embed())
 
     @app_commands.command(name="location", description="📍 Đặt hoặc kiểm tra nơi sinh sống của bạn để Neneka cập nhật thời tiết chuẩn xác")
     @app_commands.describe(city="Tên thành phố tại Việt Nam (ví dụ: Sài Gòn, Hà Nội, Đà Nẵng, Bình Dương...) hoặc 'reset' để xóa")
@@ -926,13 +1107,7 @@ class ChatCog(commands.Cog):
             message.reference.resolved.author.id == self.bot.user.id
         )
 
-        image_attachment = None
-        if message.attachments:
-            for att in message.attachments:
-                if att.content_type and att.content_type.startswith("image/"):
-                    image_attachment = att
-                    break
-
+        has_media_or_code = message_has_media_or_code(message)
         clean_content = message.clean_content.replace(f"@{self.bot.user.name}", "").strip()
 
         should, reason = proactive_engine.should_reply(
@@ -942,7 +1117,7 @@ class ChatCog(commands.Cog):
             is_reply_to_bot=is_reply_to_bot,
             channel_id=message.channel.id,
             content=clean_content,
-            has_attachments=(image_attachment is not None)
+            has_attachments=has_media_or_code
         )
 
         if not should:
@@ -1158,19 +1333,20 @@ class ChatCog(commands.Cog):
             await message.reply(embed=embed)
             return
 
-        # 10. Tạo phản hồi hội thoại thông thường và gửi (hỗ trợ cả văn bản và hình ảnh)
+        # 10. Tạo phản hồi hội thoại thông thường, đọc Code, đọc Ảnh & GIF (Tenor/Giphy/Discord)
         async with message.channel.typing():
-            image_data = None
-            if image_attachment:
-                try:
-                    img_bytes = await image_attachment.read()
-                    image_data = (img_bytes, image_attachment.content_type or "image/png")
-                except Exception as e:
-                    logger.error(f"Lỗi khi đọc file ảnh từ Discord attachment: {e}")
+            (image_data, media_hint), code_files = await asyncio.gather(
+                extract_image_or_gif_from_message(message),
+                extract_code_attachments(message),
+            )
 
-            actual_user_message = clean_content
-            if not actual_user_message and image_data:
-                actual_user_message = "Hãy quan sát kỹ bức ảnh này và đưa ra nhận xét, cảm nghĩ của ngươi theo phong thái quý cô Thất Vương Neneka."
+            # Nếu người dùng chỉ gửi link GIF Tenor/Giphy trần thì lọc bỏ URL để prompt sạch
+            actual_user_message = strip_gif_urls_from_text(clean_content) if (image_data or media_hint) else clean_content
+            if not actual_user_message:
+                if image_data or media_hint:
+                    actual_user_message = ""
+                elif code_files:
+                    actual_user_message = "Hãy đọc file code này, tóm tắt chức năng và chỉ ra nếu có bug hay điểm cần cải thiện."
 
             reply_text = await self._generate_neneka_reply(
                 user_message=actual_user_message,
@@ -1178,19 +1354,17 @@ class ChatCog(commands.Cog):
                 username=message.author.display_name,
                 guild_id=str(message.guild.id) if message.guild else None,
                 channel_id=str(message.channel.id),
-                image_data=image_data
+                image_data=image_data,
+                media_hint=media_hint,
+                code_files=code_files,
             )
 
-            # Chống phản hồi lặp lại
-            if proactive_engine.is_duplicate_response(message.channel.id, reply_text):
-                reply_text += " ..Fufu."
+            # Chống phản hồi lặp lại (chỉ áp dụng cho câu ngắn không chứa code block)
+            if "```" not in reply_text and proactive_engine.is_duplicate_response(message.channel.id, reply_text):
+                reply_text += " ✨"
             proactive_engine.record_last_response(message.channel.id, reply_text)
 
-            # Cắt ngắn nếu vượt quá giới hạn 2000 ký tự Discord
-            if len(reply_text) > 2000:
-                reply_text = reply_text[:1990] + "..."
-
-            await message.reply(reply_text)
+            await self._send_smart_chunks(message.reply, reply_text)
 
 async def setup(bot):
     await bot.add_cog(ChatCog(bot))

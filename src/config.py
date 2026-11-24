@@ -16,6 +16,16 @@ class Settings(BaseSettings):
     )
     AUTO_REPLY_CHANNELS: str = Field(default="", description="Comma-separated channel IDs")
 
+    # Custom Discord Emoji Source Server (https://discord.gg/BJTm5Zsjm)
+    EMOJI_SOURCE_GUILD_ID: str = Field(
+        default="413766882277982228",
+        description="ID máy chủ Discord nguồn cung cấp custom emoji khi chat"
+    )
+    EMOJI_SOURCE_INVITE_URL: str = Field(
+        default="https://discord.gg/BJTm5Zsjm",
+        description="Link invite máy chủ Discord nguồn cung cấp custom emoji"
+    )
+
     @property
     def max_bond_user_id_list(self) -> List[str]:
         return [uid.strip() for uid in self.MAX_BOND_USER_IDS.split(",") if uid.strip()]
@@ -69,17 +79,40 @@ class Settings(BaseSettings):
                 ids.append(int(raw_s))
         return ids
 
-    # Groq & LLM
+    # Groq & Fast LLM
     GROQ_API_KEY: str = Field(default="", description="Groq API Key")
-    GROQ_MODEL: str = Field(default="qwen/qwen3.8-27b", description="Mô hình LLM Groq")
+    GROQ_MODEL: str = Field(default="qwen/qwen3.8-27b", description="Mô hình LLM Groq chính")
+    GROQ_CODING_MODEL: str = Field(default="openai/gpt-oss-120b", description="Mô hình Groq ưu tiên khi đọc/viết code")
     GROQ_FALLBACK_MODELS: List[str] = Field(
         default=["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
     )
-    GROQ_TIMEOUT_SECONDS: float = Field(default=30.0)
-    GROQ_MAX_RETRIES: int = Field(default=3)
+    GROQ_TIMEOUT_SECONDS: float = Field(default=18.0)
+    GROQ_MAX_RETRIES: int = Field(default=2)
 
-    # Gemini (Vision & Nano Banana Image Generation)
+    # Ultra-Fast Chat APIs (Free Tiers: Cerebras ~2200 tok/s, SambaNova ~1000 tok/s)
+    CEREBRAS_API_KEY: str = Field(default="", description="Cerebras Cloud API Key (https://cloud.cerebras.ai - Free 1M tokens/day)")
+    CEREBRAS_BASE_URL: str = Field(default="https://api.cerebras.ai/v1", description="Base URL cho Cerebras Inference")
+    CEREBRAS_CHAT_MODEL: str = Field(default="qwen-3-32b", description="Model chat siêu tốc trên Cerebras")
+
+    SAMBANOVA_API_KEY: str = Field(default="", description="SambaNova Cloud API Key (https://cloud.sambanova.ai - Free tier)")
+    SAMBANOVA_BASE_URL: str = Field(default="https://api.sambanova.ai/v1", description="Base URL cho SambaNova Cloud")
+    SAMBANOVA_CHAT_MODEL: str = Field(default="Meta-Llama-3.3-70B-Instruct", description="Model chat trên SambaNova")
+
+    # Free Fast Coding APIs (Mistral Codestral Free Tier & OpenRouter Free Coder)
+    CODESTRAL_API_KEY: str = Field(default="", description="Mistral Codestral Free API Key (https://console.mistral.ai)")
+    CODESTRAL_BASE_URL: str = Field(default="https://codestral.mistral.ai/v1", description="Base URL cho Mistral Codestral")
+    CODESTRAL_MODEL: str = Field(default="codestral-latest", description="Model chuyên đọc/viết code siêu nhanh Codestral")
+
+    OPENROUTER_API_KEY: str = Field(default="", description="OpenRouter API Key (hỗ trợ model :free)")
+    OPENROUTER_BASE_URL: str = Field(default="https://openrouter.ai/api/v1", description="Base URL OpenRouter")
+    OPENROUTER_CODE_MODEL: str = Field(default="qwen/qwen3-coder:free", description="Model code miễn phí trên OpenRouter")
+
+    # Gemini (Vision, Fast Chat Fallback & Nano Banana Image Generation)
     GEMINI_API_KEY: Optional[str] = Field(default=None)
+    GEMINI_CHAT_MODEL: str = Field(
+        default="gemini-3.5-flash-lite",
+        description="Model Gemini Flash siêu nhanh dự phòng cho chat & đọc code"
+    )
     GEMINI_IMAGE_MODEL: str = Field(
         default="gemini-2.5-flash-image",
         description="Model Google Gemini Nano Banana vẽ tranh thông thường (gemini-2.5-flash-image)"
@@ -142,4 +175,3 @@ class Settings(BaseSettings):
         return ids
 
 settings = Settings()
-

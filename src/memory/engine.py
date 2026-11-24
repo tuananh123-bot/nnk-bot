@@ -36,8 +36,7 @@ class MemoryEngine:
         if not user_text or not bot_text:
             return False
         bot_s = bot_text.strip()
-        # Tránh các câu trả lời bị đứt đoạn, cụt lủn hoặc lặp từ lỗi
-        if len(bot_s) < 15:
+        if len(bot_s) < 2:
             return False
         # Cắt các đuôi cụt lủn do stop token hoặc lỗi mô hình
         if bot_s.endswith(("\nA", "\nAra", "\nChà", "\nHửm", " A", " Ara", " Chà")):

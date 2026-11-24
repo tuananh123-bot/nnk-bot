@@ -6,6 +6,7 @@ from discord.ext import commands
 from src.config import settings
 from src.database.connection import db_manager
 from src.cache.redis_client import cache
+from src.utils.emoji_manager import emoji_manager
 
 logger = logging.getLogger("Neneka.Bot")
 
@@ -15,6 +16,8 @@ def get_prefix(bot, message):
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True
+intents.emojis_and_stickers = True
 
 bot = commands.Bot(
     command_prefix=get_prefix,
@@ -57,15 +60,26 @@ async def setup_hook():
 
 @bot.event
 async def on_ready():
+    emoji_info = emoji_manager.get_status_info(bot)
     logger.info("=" * 60)
     logger.info(f"👑 NENEKA AUTONOMOUS DISCORD AI ĐÃ SẴN SÀNG: {bot.user} (ID: {bot.user.id})")
     logger.info(f"🔮 Chế độ hoạt động: {settings.AUTONOMOUS_MODE}")
     logger.info(f"📻 Kênh tự động phản hồi: {settings.auto_reply_channel_ids}")
+    if emoji_info["connected"]:
+        logger.info(
+            f"😄 Kho Emoji Server [{emoji_info['guild_name']} - {emoji_info['guild_id']}]: "
+            f"Đã nạp {emoji_info['total_emojis']} custom emojis!"
+        )
+    else:
+        logger.info(
+            f"ℹ️ Chưa thấy bot trong Server Emoji nguồn ({emoji_info['guild_id']} - {emoji_info['server_invite']}). "
+            f"Hãy mời bot vào server đó (xem lệnh /emojis) để dùng toàn bộ custom emoji!"
+        )
     logger.info("=" * 60)
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="các biến số ma thuật | /chat"
+            name="code, GIF & trò chuyện | /chat"
         )
     )
 
@@ -73,4 +87,3 @@ async def start_bot():
     if not settings.DISCORD_TOKEN:
         raise RuntimeError("Chưa tìm thấy DISCORD_TOKEN trong cấu hình!")
     await bot.start(settings.DISCORD_TOKEN)
-

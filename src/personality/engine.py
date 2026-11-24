@@ -7,6 +7,7 @@ from src.personality.prompts import (
     NENEKA_VIETNAMESE_STYLE_PROMPT,
     NENEKA_JAPANESE_STYLE_PROMPT,
     NENEKA_ENGLISH_STYLE_PROMPT,
+    NENEKA_CODING_DIRECTIVE,
     NENEKA_CANON_FACTS,
     NENEKA_CREATOR_DIRECTIVE,
     NENEKA_MAX_BOND_DIRECTIVE,
@@ -405,7 +406,8 @@ class PersonalityEngine:
         is_creator: bool = False,
         is_max_bond: bool = False,
         is_nsfw: bool = False,
-        costume: Optional[Union[str, Dict[str, Any]]] = None
+        costume: Optional[Union[str, Dict[str, Any]]] = None,
+        is_coding: bool = False,
     ) -> str:
         """Tổng hợp System Prompt đa tầng chuẩn mực cho Neneka"""
         st = self.state
@@ -416,33 +418,34 @@ class PersonalityEngine:
             st.irritation = 0
 
         if user_language == "ja":
-            lang_instruction = "IMPORTANT: The user message is in Japanese. Reply in natural, elegant Japanese anime style adhering to the Japanese style prompt."
+            lang_instruction = "IMPORTANT: The user message is in Japanese. Reply in natural, conversational Japanese adhering to the Japanese style prompt."
             style_section = NENEKA_JAPANESE_STYLE_PROMPT
         elif user_language == "en":
-            lang_instruction = "IMPORTANT: The user message is in English. Reply in composed, intelligent English anime style adhering to the English style prompt."
+            lang_instruction = "IMPORTANT: The user message is in English. Reply in natural, composed, witty English adhering to the English style prompt."
             style_section = NENEKA_ENGLISH_STYLE_PROMPT
         else:
-            lang_instruction = "IMPORTANT: The user message is in Vietnamese. Reply in natural, anime-cadence Vietnamese adhering to the Vietnamese style prompt."
+            lang_instruction = "IMPORTANT: The user message is in Vietnamese. Reply in natural, lively conversational Vietnamese adhering to the Vietnamese style prompt."
             style_section = NENEKA_VIETNAMESE_STYLE_PROMPT
 
         creator_section = f"\n\n{NENEKA_CREATOR_DIRECTIVE}" if is_creator else ""
         max_bond_section = f"\n\n{NENEKA_MAX_BOND_DIRECTIVE}" if (is_max_bond and not is_creator) else ""
+        coding_section = f"\n\n{NENEKA_CODING_DIRECTIVE}" if is_coding else ""
 
-        # NSFW tiered addendum — dựa vào mức arousal/lust hiện tại
+        # NSFW tiered addendum — chỉ đính kèm khi đang ở kênh NSFW và không phải đang thuần debug code
         nsfw_section = ""
-        if is_nsfw:
+        if is_nsfw and not is_coding:
             tier = self._arousal_to_nsfw_tier(st.arousal, st.lust)
             nsfw_section = f"\n\n{build_nsfw_addendum(tier=tier, is_creator=is_creator)}"
 
         # Hướng dẫn biểu hiện cảm xúc thể xác dựa trên mức độ Dâm dục & Hứng cảm
         sensual_matrix_guide = ""
-        if is_nsfw or st.lust >= 20 or st.arousal >= 20:
+        if not is_coding and (is_nsfw or st.lust >= 20 or st.arousal >= 20):
             sensual_matrix_guide = (
                 f"\n\n### CHỈ SỐ DỤC VỌNG & HỨNG CẢM HIỆN TẠI (NSFW / SENSUAL MATRIX):\n"
                 f"- Mức Độ Dâm Dục (Lust): {st.lust_bar} • {st.lust_description}\n"
                 f"- Mức Độ Hứng Cảm (Arousal): {st.arousal_bar} • {st.arousal_description}\n"
                 f"- NSFW Tier hiện tại: {self._arousal_to_nsfw_tier(st.arousal, st.lust)}/4\n"
-                f"- QUY TẮC NHẬP VAI BIỂU HIỆN CẢM XÚC THỂ XÁC: Tuân thủ chỉ dẫn theo từng Tier được kích hoạt tương ứng với mức độ Hứng cảm và Dâm dục của Neneka."
+                f"- QUY TẮC NHẬP VAI BIỂU HIỆN CẢM XÚC THỂ XÁC: Chỉ thể hiện khi đối phương tương tác thân mật/18+; nếu đối phương nói chuyện bình thường thì trò chuyện tự nhiên đời thường."
             )
 
         # Costume awareness
@@ -480,7 +483,7 @@ class PersonalityEngine:
 
         return f"""{NENEKA_CANON_BASE_PROMPT}
 
-{NENEKA_CANON_FACTS}{creator_section}{max_bond_section}{nsfw_section}{sensual_matrix_guide}{costume_section}
+{NENEKA_CANON_FACTS}{creator_section}{max_bond_section}{coding_section}{nsfw_section}{sensual_matrix_guide}{costume_section}
 
 {style_section}
 
