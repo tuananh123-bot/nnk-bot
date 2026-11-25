@@ -1244,6 +1244,47 @@ class ChatCog(commands.Cog):
                     await message.reply(**reply_kwargs)
                     return
 
+        # 5.8b Kiểm tra nếu người dùng yêu cầu kết hợp Đàn Piano + Voice Line / Giọng nói của Neneka tự nhiên
+        concert_match = re.search(
+            r"(?:kết\s+hợp\s+piano|hòa\s+âm\s+piano|ghép\s+(?:giọng|voice(?:\s*line)?)\s+(?:vào\s+|cùng\s+|với\s+)?(?:bài\s+|nhạc\s+)?piano|piano\s+(?:\+|kèm|với|cùng)\s+(?:giọng|voice(?:\s*line)?|thoại)|đọc\s+thoại\s+(?:trên\s+)?nền\s+piano|biểu\s+diễn\s+piano\s+(?:kèm|cùng)\s+(?:giọng|thoại))\s*[:\-]?\s*(.*)",
+            clean_content,
+            re.IGNORECASE,
+        )
+        if concert_match:
+            voice_cog = self.bot.get_cog("VoiceCog")
+            if voice_cog:
+                async with message.channel.typing():
+                    gid = await voice_cog._auto_join_user_voice(message.guild, message.author)
+                    raw_arg = concert_match.group(1).strip()
+                    p_part, v_part = ("Lost Princess", "canon_short")
+                    if "|" in raw_arg:
+                        left, right = raw_arg.split("|", 1)
+                        p_part = left.strip() or "Lost Princess"
+                        v_part = right.strip() or "canon_short"
+                    elif raw_arg:
+                        # Bỏ từ nối đầu câu nếu có (VD: 'với voice line bài Unravel')
+                        cleaned_p = re.sub(
+                            r"^(?:với|cùng|và|\+)\s*(?:giọng\s+nói|voice\s*line|thoại)?\s*(?:bài|nhạc)?\s*",
+                            "",
+                            raw_arg,
+                            flags=re.IGNORECASE,
+                        ).strip()
+                        if cleaned_p:
+                            p_part = cleaned_p
+                    audio_path, fname, c_embed, c_view = await voice_cog.handle_piano_voice_concert(
+                        piano_query=p_part,
+                        voice_preset_or_text=v_part,
+                        keep_full_piano=False,
+                        guild_id=gid,
+                    )
+                    reply_kwargs = {"embed": c_embed}
+                    if audio_path and os.path.exists(audio_path):
+                        reply_kwargs["file"] = discord.File(audio_path, filename=fname)
+                    if c_view:
+                        reply_kwargs["view"] = c_view
+                    await message.reply(**reply_kwargs)
+                    return
+
         piano_search_match = re.search(
             r"(?:tìm\s+(?:kiếm\s+)?(?:bài\s+)?(?:nhạc\s+)?(?:game\s+)?(?:tiếng\s+)?piano|mở\s+(?:bài\s+)?(?:nhạc\s+)?piano|phát\s+(?:bài\s+)?(?:nhạc\s+)?piano|bật\s+(?:nhạc\s+)?piano|(?:đánh|gảy|chơi|dạo)\s+(?:đàn\s+|bản\s+|bài\s+)?piano(?:\s+bài|\s+game)?|độc\s+tấu\s+piano(?:\s+bài)?|nhạc\s+piano\s+(?:game|bài))\s*[:\-]?\s*(.*)",
             clean_content,
@@ -1275,10 +1316,10 @@ class ChatCog(commands.Cog):
                         if not vc or not vc.is_connected():
                             await voice_channel_mgr.join_channel(message.author.voice.channel)
 
-                    audio_file, song = await voice_cog._handle_sing(theme=clean_content, guild_id=guild_id)
+                    audio_file, song, piano_title, mix_meta = await voice_cog._handle_sing(theme=clean_content, guild_id=guild_id)
                     if audio_file:
-                        embed = create_song_embed(song)
-                        discord_file = discord.File(audio_file, filename="neneka_singing.mp3")
+                        embed = create_song_embed(song, piano_title=piano_title, duration_sec=mix_meta.get("duration_sec"))
+                        discord_file = discord.File(audio_file, filename="neneka_singing_piano.mp3")
                         await message.reply(embed=embed, file=discord_file)
                         return
 

@@ -186,9 +186,13 @@ def is_singing_request(message: str) -> bool:
     return any(k in lower for k in keywords)
 
 
-def create_song_embed(song: Dict[str, str]) -> discord.Embed:
+def create_song_embed(
+    song: Dict[str, str],
+    piano_title: Optional[str] = None,
+    duration_sec: Optional[float] = None,
+) -> discord.Embed:
     """
-    Tạo Embed Discord sang trọng hiển thị lời bài hát tiếng Nhật, Romaji và lời dịch tiếng Việt
+    Tạo Embed Discord sang trọng hiển thị lời bài hát tiếng Nhật, Romaji, lời dịch Việt & thông tin đệm đàn Piano
     """
     embed = discord.Embed(
         title=f"🎵 {song.get('title', 'Giai Điệu Landosol')}",
@@ -210,11 +214,18 @@ def create_song_embed(song: Dict[str, str]) -> discord.Embed:
         value=f"*{song.get('vietnamese_lyrics', '')}*",
         inline=False
     )
+    if piano_title:
+        dur_note = f" • `{duration_sec:.1f}s`" if duration_sec else ""
+        embed.add_field(
+            name="🎹 Hòa Âm Đại Dương Cầm & Giọng Hát",
+            value=f"Đệm đàn: **{piano_title}**{dur_note} *(48kHz Stereo Studio Mix)*",
+            inline=False,
+        )
     embed.add_field(
         name="💜 Lời Nhắn Của Neneka",
         value=f"*{song.get('outro_quote', 'Fufu... Hy vọng giai điệu vừa rồi làm cậu thấy dễ chịu.')}*",
         inline=False
     )
     genre = song.get("genre", "Phong cách Anime Nhật Bản")
-    embed.set_footer(text=f"Thể loại: {genre} • Thất Vương Utsushimi Neneka (Fish Audio)")
+    embed.set_footer(text=f"Thể loại: {genre} • Thất Vương Utsushimi Neneka (Piano + Voice Studio)")
     return embed

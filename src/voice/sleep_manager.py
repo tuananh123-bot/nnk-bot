@@ -7,6 +7,12 @@ import discord
 
 from src.voice.japanese_tts import japanese_tts
 from src.voice.voice_channel import voice_channel_mgr
+from src.voice.piano_voice_mixer import (
+    LULLABY_ID_TO_PIANO_PIECE,
+    ensure_builtin_or_searched_piano_backing,
+    mix_piano_and_voice,
+    resolve_official_voice_sample,
+)
 
 logger = logging.getLogger("Neneka.SleepManager")
 
@@ -100,17 +106,39 @@ class SleepManager:
 
         return random.choice(SLEEP_LULLABIES)
 
-    async def generate_lullaby_audio(self, lullaby: Dict[str, Any]) -> Optional[str]:
-        """Tạo file âm thanh giọng nói thì thầm tiếng Nhật của Neneka (cảm xúc Affectionate/dịu dàng)"""
+    async def generate_lullaby_audio(self, lullaby: Dict[str, Any], with_piano: bool = True) -> Optional[str]:
+        """Tạo file âm thanh lời thì thầm tiếng Nhật của Neneka hòa âm cùng tiếng Đàn Dương Cầm ru ngủ êm dịu."""
         try:
-            audio_path = await japanese_tts.generate_speech(
+            voice_path = await japanese_tts.generate_speech(
                 lullaby["japanese_whisper"],
                 emotion="Affectionate"
             )
-            if audio_path and os.path.exists(audio_path):
-                return audio_path
+            if not voice_path or not os.path.exists(voice_path):
+                voice_path, _ = resolve_official_voice_sample("affection")
+
+            if not voice_path or not os.path.exists(voice_path):
+                return None
+
+            if with_piano:
+                piece_key = LULLABY_ID_TO_PIANO_PIECE.get(lullaby.get("id", ""), "clair_de_lune")
+                piano_path, _ = await ensure_builtin_or_searched_piano_backing(
+                    piece_key, prefer_search=False, tempo_override=68
+                )
+                mixed_path, _ = await mix_piano_and_voice(
+                    piano_path=piano_path,
+                    voice_path=voice_path,
+                    intro_sec=2.6,
+                    outro_sec=4.5,
+                    piano_base_gain=0.52,
+                    piano_ducked_gain=0.20,
+                    voice_gain=0.92,
+                )
+                if mixed_path and os.path.exists(mixed_path):
+                    return mixed_path
+
+            return voice_path
         except Exception as e:
-            logger.error(f"Lỗi khi tạo audio ru ngủ: {e}")
+            logger.error(f"Lỗi khi tạo audio ru ngủ kết hợp Piano: {e}")
         return None
 
     def create_sleep_embed(self, lullaby: Dict[str, Any], user_mention: str) -> discord.Embed:

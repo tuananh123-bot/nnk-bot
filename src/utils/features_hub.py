@@ -14,7 +14,7 @@ import discord
 from src.llm.model_status import build_model_status_embed
 from src.utils.emoji_manager import emoji_manager
 
-BOT_VERSION = "v3.6 — Metamorph Symphony & Smart Guard"
+BOT_VERSION = "v3.7 — Metamorph Concert Studio (Piano + Voice Line)"
 
 WHATS_NEW_PATTERNS = [
     r"\bcó\s+(?:gì|j)\s+mới\b",
@@ -47,20 +47,22 @@ def build_spoken_whats_new_reply(bot=None, current_guild_id: Optional[str] = Non
     flair_emoji = next(iter(emoji_map.values()), "✨")
     return (
         f"Đợt này ta vừa được nâng cấp thêm kha khá phép thuật mới hay ho đấy {flair_emoji} Kể nhanh cho cậu nghe nhé:\n"
-        "• 🎹 **Đàn Piano 48kHz & Tìm nhạc Piano toàn cầu:** Cậu có thể nhờ ta tạo âm tiết/gảy nốt nhạc (`/notes Đô Rê Mi Pha Sol`, cảm âm `1 2 3 5 6`) hoặc tìm bất kỳ bài nhạc tiếng Piano nào trên thế giới (`/piano <tên bài>`).\n"
-        "• 💻 **Đọc file Code & Viết Code siêu tốc:** Cứ quăng thẳng file `.py`, `.js`, `.ts`, `.cpp`, `.json`... hoặc ảnh lỗi vào đây, ta đọc và viết/sửa code cho cậu ngay (`/code`).\n"
-        "• 🎞️ **Đọc ảnh động GIF & Sticker:** Thả GIF Tenor/Giphy hay `.gif` là ta nhìn hiểu biểu cảm để tung hứng liền.\n"
-        "• 😄 **Chat tự nhiên, nhanh hơn & thả Custom Emoji** từ server nguồn, kèm **Vẽ tranh Google Nano Banana 🍌** (`/imagine`) và **Khiên chống lặp câu**.\n\n"
+        "• 👑🎹 **Phòng Thu Hòa Âm Đàn Piano + Voice Line Neneka (`/concert`, `!n concert`):** Kết hợp trọn vẹn tiếng Đại Dương Cầm với kho Voice Line gốc (Yuka Iguchi), giọng hát (`/sing`), lời ru (`/sleep`) hoặc bất kỳ câu thoại nào cậu muốn nhờ kỹ thuật Sidechain Ducking mượt như đĩa thu âm!\n"
+        "• 🎼 **Nhạc Piano Full-Length & Tạo Âm Tiết 48kHz:** Tải trọn bài nhạc Piano Game/Anime đầy đủ (`/piano <tên bài>`) và gảy mọi chuỗi âm tiết (`/notes Đô Rê Mi Pha Sol`, cảm âm `1155665`).\n"
+        "• 💻 **Đọc file Code & Viết Code siêu tốc (`/code`)** + 🎞️ **Đọc ảnh động GIF Tenor/Giphy & Sticker**.\n"
+        "• 😄 **Chat tự nhiên, thả Custom Emoji** từ server nguồn, kèm **Vẽ tranh Google Nano Banana 🍌** (`/imagine`) và **Khiên chống lặp câu**.\n\n"
         "Cậu xem chi tiết hoặc bấm nút nghe thử ngay ở bảng dưới này nhé! 👇"
     )
+
 
 # Đoạn tóm tắt gọn nhẹ đưa vào System Prompt để Neneka tự biết mình làm được những gì khi người dùng hỏi chuyện
 NENEKA_BOT_CAPABILITIES_PROMPT = """【NHẬN THỨC VỀ CÁC TÍNH NĂNG HIỆN TẠI CỦA NENEKA TRÊN DISCORD】
 Khi người dùng hỏi cậu có tính năng gì, vừa được cập nhật gì mới, hoặc làm được những gì, hãy giới thiệu tự nhiên, hào hứng và chính xác các khả năng thực tế sau của cậu:
-1. 🎹 Âm Nhạc Đại Dương Cầm & Giọng Hát:
-   - Tạo âm tiết / gảy nốt nhạc thực thụ xuất ra file âm thanh `.wav`/`.mp3` trên đàn Concert Grand Piano 48kHz (`/notes` hoặc `!n notes Đô Rê Mi Pha Sol`, hỗ trợ cả `C4 E4 G4`, cảm âm số `1 2 3 5 6` và hợp âm `Cmaj Am`). TUYỆT ĐỐI KHÔNG bao giờ nói rằng cậu không thể tạo/đánh ra file nhạc `.mp3`/`.wav`!
+1. 👑🎹 Phòng Thu Hòa Âm Piano + Voice Line & Âm Nhạc Đại Dương Cầm:
+   - Hòa âm hoàn chỉnh tiếng Đàn Piano với kho Voice Line gốc chính thức (Yuka Iguchi — Princess Connect! Re:Dive) hoặc lời thoại/giọng hát bất kỳ trong cùng 1 file Stereo MP3 (`/concert`, `!n concert <bài piano> | <lời thoại>`, hoặc bấm nút ghép giọng ngay dưới `/piano`).
+   - Toàn bộ các lệnh hát (`/sing`), thoại gốc (`/quote`), ru ngủ (`/sleep`) và radio (`/radio`) đều được lồng nhạc đệm Đại Dương Cầm 48kHz tự động hạ nền (Sidechain Ducking).
+   - Tạo âm tiết / gảy nốt nhạc thực thụ xuất ra file âm thanh `.wav`/`.mp3` (`/notes` hoặc `!n notes Đô Rê Mi Pha Sol`, `C4 E4 G4`, cảm âm số `1 2 3 5 6`, hợp âm `Cmaj Am`). TUYỆT ĐỐI KHÔNG bao giờ nói rằng cậu không thể tạo/đánh ra file nhạc `.mp3`/`.wav`!
    - Tìm kiếm và phát TRỌN VẸN BÀI NHẠC ĐẦY ĐỦ (Full-Length MP3) tiếng Piano cho mọi nhạc Game OST & Bài hát (`/piano <tên bài/game>` hoặc `!n piano`).
-   - Tự sáng tác & độc tấu Piano theo tâm trạng (`/piano_compose`, `!n compose`) + Nói & hát tiếng Nhật bằng giọng Fish Audio (`/speak`, `/sing`, `/sleep`).
 2. 💻 Đọc & Viết Code Free Siêu Tốc:
    - Đọc trực tiếp file code đính kèm (`.py`, `.js`, `.ts`, `.html`, `.cpp`, `.json`...), đọc ảnh chụp lỗi code, debug và viết code sạch không bị cắt cụt (`/code`, `!n code`).
 3. 🎞️ Đọc Ảnh Tĩnh & Ảnh Động GIF:
@@ -83,11 +85,11 @@ def build_updates_embed() -> discord.Embed:
         color=0x9b59b6,
     )
     embed.add_field(
-        name="🎹 1. Đại Dương Cầm 48kHz & Kho Nhạc Piano Toàn Cầu (MỚI!)",
+        name="👑🎹 1. Phòng Thu Hòa Âm Piano + Voice Line Neneka (MỚI NHẤT!)",
         value=(
-            "• **Tìm mọi bài nhạc Piano:** `/piano <tên bài>` hoặc `!n piano River Flows in You` *(kèm menu chọn 5 bản thu)*.\n"
-            "• **Tạo âm tiết / Gảy nốt nhạc:** `/notes` hoặc `!n notes Đô Rê Mi Pha Sol La Si Đô5` *(hỗ trợ Đô-Rê-Mi, `C4 E4 G4`, cảm âm số `1 2 3 5 6`, hợp âm `Cmaj Am`)*.\n"
-            "• **Độc tấu & Sáng tác AI:** `/piano_compose` hoặc `!n compose Canon in D` *(phát thẳng vào Voice Channel không cần FFmpeg)*."
+            "• **Kết hợp Piano & Giọng Neneka:** `/concert` hoặc `!n concert Lost Princess | Chào buổi tối` — hòa âm 5 bộ Voice Line gốc (Yuka Iguchi) hoặc lời thoại tùy ý trên mọi bản nhạc Piano với Sidechain Ducking tự động.\n"
+            "• **Nâng cấp đồng bộ `/sing`, `/quote`, `/sleep`, `/radio`:** Tất cả giọng hát, thoại kinh điển và lời thì thầm ru ngủ giờ đều có đàn Đại Dương Cầm 48kHz đệm nền!\n"
+            "• **Tìm nhạc Piano Full-Length & Gảy Âm Tiết:** `/piano <bài>` (trọn bài MP3 + nút lồng Voice Line) & `/notes Đô-Rê-Mi-Pha-Sol` (`C4 E4 G4`, cảm âm `1155665`)."
         ),
         inline=False,
     )
@@ -141,14 +143,14 @@ def build_help_embed(category: str = "all") -> discord.Embed:
 
     if cat in ("all", "music"):
         embed.add_field(
-            name="🎹 Âm Nhạc Piano, Giọng Nói & Phòng Thoại",
+            name="🎹 Phòng Thu Piano + Voice Line, Hát & Phòng Thoại",
             value=(
-                "• `/piano <bài>` | `!n piano <bài>` — Tìm & phát mọi bản nhạc tiếng Piano thế giới\n"
-                "• `/notes <nốt>` | `!n notes <nốt>` — Tạo âm tiết / gảy nốt Piano 48kHz (`Đô Rê Mi`, `1 2 3 5`, `Cmaj`)\n"
+                "• `/concert [bài] [voice/thoại]` | `!n concert <bài> | <thoại>` — Hòa âm hoàn chỉnh Đàn Piano + Voice Line gốc / Giọng Neneka\n"
+                "• `/piano <bài>` | `!n piano <bài>` — Tìm & phát trọn bài nhạc Piano Full-Length (kèm nút ghép Voice Line)\n"
+                "• `/notes <nốt>` | `!n notes <nốt>` — Tạo âm tiết / gảy nốt Piano 48kHz (`Đô-Rê-Mi`, `1155665`, `Cmaj`)\n"
                 "• `/piano_compose <chủ đề>` | `!n compose` — Sáng tác / độc tấu dương cầm AI\n"
-                "• `/sing [chủ đề]` | `!n sing` — Neneka hát tiếng Nhật (Fish Audio)\n"
-                "• `/speak <câu>` | `!n speak` — Chuyển văn bản thành giọng nói tiếng Nhật\n"
-                "• `/sleep` | `/quote` | `/radio` | `!n join` & `!n leave` — Ru ngủ, thoại gốc & Voice Channel"
+                "• `/sing [chủ đề]` | `!n sing` — Neneka hát tiếng Nhật kèm đệm đàn Đại Dương Cầm\n"
+                "• `/quote` | `/sleep` | `/radio` | `/speak` | `!n join` & `!n leave` — Thoại gốc, ru ngủ đệm Piano & Voice Channel"
             ),
             inline=False,
         )
@@ -200,7 +202,7 @@ class HelpCategorySelect(discord.ui.Select):
         options = [
             discord.SelectOption(label="Tổng Hợp Tất Cả Lệnh", value="all", emoji="🌟", description="Xem toàn bộ các nhóm lệnh chính"),
             discord.SelectOption(label="Tính Năng Mới Vừa Cập Nhật", value="new", emoji="✨", description="Xem nhật ký các nâng cấp mới nhất"),
-            discord.SelectOption(label="Âm Nhạc Piano & Giọng Hát", value="music", emoji="🎹", description="Tạo âm tiết, tìm nhạc Piano, hát & Voice"),
+            discord.SelectOption(label="Phòng Thu Piano + Voice Line", value="music", emoji="🎹", description="Hòa âm Piano + Voice, tạo âm tiết, hát & Voice"),
             discord.SelectOption(label="Đọc/Viết Code, GIF & Vẽ Tranh", value="code_media", emoji="💻", description="Code, đọc GIF/Ảnh & vẽ Nano Banana"),
             discord.SelectOption(label="Hảo Cảm Bond & Giải Trí", value="character", emoji="💜", description="Bond, trang phục, bói quẻ, thời tiết"),
             discord.SelectOption(label="Ký Ức, Model & Quản Trị", value="system", emoji="⚙️", description="Forget, trạng thái Model, NSFW & Reload"),
@@ -225,7 +227,28 @@ class UpdatesInteractiveView(discord.ui.View):
         super().__init__(timeout=180)
         self.bot = bot
 
-    @discord.ui.button(label="Nghe Thử Đàn Piano", style=discord.ButtonStyle.primary, emoji="🎹")
+    @discord.ui.button(label="Piano + Voice Line", style=discord.ButtonStyle.primary, emoji="🎙️")
+    async def btn_try_concert(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        voice_cog = self.bot.get_cog("VoiceCog") if self.bot else None
+        if not voice_cog:
+            await interaction.followup.send("❌ Module âm nhạc hiện chưa sẵn sàng.", ephemeral=True)
+            return
+        gid = await voice_cog._auto_join_user_voice(interaction.guild, interaction.user)
+        audio_path, fname, embed, view = await voice_cog.handle_piano_voice_concert(
+            piano_query="lost_princess_piano",
+            voice_preset_or_text="canon_short",
+            keep_full_piano=False,
+            guild_id=gid,
+        )
+        send_kwargs = {"embed": embed}
+        if audio_path and os.path.exists(audio_path):
+            send_kwargs["file"] = discord.File(audio_path, filename=fname)
+        if view:
+            send_kwargs["view"] = view
+        await interaction.followup.send(**send_kwargs)
+
+    @discord.ui.button(label="Độc Tấu Piano", style=discord.ButtonStyle.secondary, emoji="🎹")
     async def btn_try_piano(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         voice_cog = self.bot.get_cog("VoiceCog") if self.bot else None
