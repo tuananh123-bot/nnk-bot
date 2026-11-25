@@ -1222,7 +1222,7 @@ class ChatCog(commands.Cog):
                 await message.reply(embed=embed)
                 return
 
-        # 5.8 Kiểm tra nếu người dùng yêu cầu tạo âm tiết / đánh nốt nhạc hoặc tìm bài nhạc tiếng Piano tự nhiên
+        # 5.8 Kiểm tra nếu người dùng yêu cầu tạo âm tiết / đánh nốt nhạc hoặc tìm/chơi bài nhạc tiếng Piano tự nhiên
         note_match = re.search(
             r"(?:tạo\s+âm\s+tiết|đánh\s+nốt|gảy\s+nốt|chơi\s+nốt|đàn\s+nốt|cảm\s+âm\s+piano)\s*[:\-]?\s*(.+)",
             clean_content,
@@ -1233,17 +1233,19 @@ class ChatCog(commands.Cog):
             if voice_cog:
                 async with message.channel.typing():
                     gid = await voice_cog._auto_join_user_voice(message.guild, message.author)
-                    wav_path, p_embed = await voice_cog.handle_piano_notes(
+                    audio_path, fname, p_embed, p_view = await voice_cog.handle_piano_notes(
                         note_match.group(1).strip(), tempo=108, guild_id=gid
                     )
-                    await message.reply(
-                        embed=p_embed,
-                        file=discord.File(wav_path, filename="neneka_piano_notes.wav"),
-                    )
+                    reply_kwargs = {"embed": p_embed}
+                    if audio_path and os.path.exists(audio_path):
+                        reply_kwargs["file"] = discord.File(audio_path, filename=fname)
+                    if p_view:
+                        reply_kwargs["view"] = p_view
+                    await message.reply(**reply_kwargs)
                     return
 
         piano_search_match = re.search(
-            r"(?:tìm\s+(?:kiếm\s+)?(?:bài\s+)?(?:nhạc\s+)?(?:tiếng\s+)?piano|mở\s+(?:bài\s+)?(?:nhạc\s+)?piano|phát\s+(?:bài\s+)?(?:nhạc\s+)?piano|bật\s+(?:nhạc\s+)?piano|đánh\s+đàn\s+piano(?:\s+bài)?|độc\s+tấu\s+piano(?:\s+bài)?)\s*[:\-]?\s*(.*)",
+            r"(?:tìm\s+(?:kiếm\s+)?(?:bài\s+)?(?:nhạc\s+)?(?:game\s+)?(?:tiếng\s+)?piano|mở\s+(?:bài\s+)?(?:nhạc\s+)?piano|phát\s+(?:bài\s+)?(?:nhạc\s+)?piano|bật\s+(?:nhạc\s+)?piano|(?:đánh|gảy|chơi|dạo)\s+(?:đàn\s+|bản\s+|bài\s+)?piano(?:\s+bài|\s+game)?|độc\s+tấu\s+piano(?:\s+bài)?|nhạc\s+piano\s+(?:game|bài))\s*[:\-]?\s*(.*)",
             clean_content,
             re.IGNORECASE,
         )

@@ -37,11 +37,11 @@ os.makedirs(AUDIO_CACHE_DIR, exist_ok=True)
 
 # Bảng ánh xạ nốt cơ bản sang bán cung (semitone trong 1 quãng tám, C = 0)
 NOTE_SEMITONES: Dict[str, int] = {
-    "c": 0, "đô": 0, "do": 0, "ut": 0,
+    "c": 0, "đô": 0, "đo": 0, "do": 0, "ut": 0,
     "d": 2, "rê": 2, "re": 2,
     "e": 4, "mi": 4,
     "f": 5, "pha": 5, "fa": 5,
-    "g": 7, "sol": 7, "son": 7,
+    "g": 7, "sol": 7, "son": 7, "sôn": 7,
     "a": 9, "la": 9,
     "b": 11, "si": 11, "ti": 11, "h": 11,
 }
@@ -232,6 +232,78 @@ def _parse_single_pitch_token(token: str, default_octave: int = 4) -> List[int]:
     return []
 
 
+def _split_compound_note_tokens(sequence_text: str) -> List[str]:
+    """
+    Chuẩn hóa mọi kiểu phân tách nốt nhạc do người dùng gõ:
+    - Dấu phẩy sát nhau: `Đô,Rê,Mi,Pha,Sol` hoặc `C4,D4,E4` (giữ nguyên dấu `,` hạ quãng của Jianpu như `5, 6,`)
+    - Gạch ngang nối nốt: `Đô-Rê-Mi-Pha-Sol` hoặc `C4-D4-E4-F4` hoặc `1-2-3-4-5` (giữ nguyên dấu ` - ` đứng riêng để kéo ngân)
+    - Chuỗi nốt viết dính liền không cách: `C4D4E4F4G4` hoặc cảm âm số viết liền `1155665` / `1234567`
+    - Mũi tên / gạch chéo phân ô nhịp: `|`, `;`, `->`, `→`
+    """
+    cleaned = sequence_text.replace("|", " ").replace("\n", " ").replace(";", " ").replace("->", " ").replace("→", " ")
+    # Dấu phẩy giữa các chữ cái/nốt (ví dụ C4,D4,E4 hoặc Đô,Rê,Mi) -> tách thành khoảng trắng
+    cleaned = re.sub(r",(?=[^\W\d_]|[#b])", " ", cleaned)
+    cleaned = re.sub(r",\s+", " ", cleaned)
+    # Dấu gạch ngang nối liền giữa các nốt (ví dụ Đô-Rê-Mi, C4-E4-G4, 1-2-3-5) -> tách thành khoảng trắng
+    cleaned = re.sub(r"(?<=[\w'#b])\-(?=[^\W\d_]|[1-7#b])", " ", cleaned)
+    # Nốt quốc tế viết dính liền (ví dụ C4D4E4F4G4) -> tách rời từng nốt
+    cleaned = re.sub(r"(?<=[A-Ga-g][0-8])(?=[A-Ga-g])", " ", cleaned)
+    cleaned = re.sub(r"(?<=[A-Ga-g][#b][0-8])(?=[A-Ga-g])", " ", cleaned)
+
+    tokens: List[str] = []
+    for raw_tok in cleaned.split():
+        tok = raw_tok.strip()
+        if not tok:
+            continue
+        # Cảm âm số viết liền nhau từ 2 chữ số trở lên (ví dụ '1155665' hoặc '1234567') -> tách từng phách
+        if re.fullmatch(r"[0-7]{2,}", tok):
+            tokens.extend(list(tok))
+        else:
+            tokens.append(tok)
+    return tokens
+
+
+def is_genuine_note_sequence(text: str) -> bool:
+    """
+    Phân biệt chính xác chuỗi ÂM TIẾT / NỐT NHẠC thật sự (VD: 'Đô Rê Mi', 'C4 E4 G4', '1 1 5 5 6 6 5')
+    với TÊN BÀI HÁT / TÊN GAME vô tình chứa từ giống nốt nhạc (VD: 'Re Zero', 'La Vie En Rose', 'Do It', 'A Thousand Years')!
+    Ngăn chặn triệt để lỗi gõ tên bài hát mà chỉ phát ra đúng 1 nốt nhạc!
+    """
+    if not text or not text.strip():
+        return False
+
+    raw_tokens = _split_compound_note_tokens(text.strip())
+    if not raw_tokens:
+        return False
+
+    valid_notes = 0
+    rest_tokens = 0
+    non_note_words = 0
+
+    for tok in raw_tokens:
+        # Bỏ phần thời lượng :2, *2, /2, . ở cuối nếu có
+        pitch_part = re.sub(r"(?:[:*/][0-9]*\.?[0-9]+|\.+)$", "", tok)
+        if pitch_part in {"-", "_", "~", "0", "rest", "nghi", "nghỉ", "lặng"}:
+            rest_tokens += 1
+            continue
+        midis = _parse_single_pitch_token(pitch_part)
+        if midis:
+            valid_notes += 1
+        else:
+            non_note_words += 1
+
+    if valid_notes == 0:
+        return False
+
+    # Nếu có bất kỳ từ tiếng Anh/Việt nào không phải nốt nhạc đi kèm chỉ 1-2 nốt (VD: "Re Zero", "Bài Mi", "La La Land") -> ĐÂY LÀ TÊN BÀI HÁT!
+    if non_note_words > 0:
+        total_meaningful = valid_notes + non_note_words
+        if valid_notes < 4 or (valid_notes / total_meaningful) < 0.8:
+            return False
+
+    return True
+
+
 def parse_note_sequence(
     sequence_text: str,
     default_octave: int = 4,
@@ -239,16 +311,13 @@ def parse_note_sequence(
     """
     Phân tích chuỗi âm tiết / nốt nhạc người dùng nhập thành danh sách sự kiện:
     [(danh_sách_midi, số_phách_beats), ...]
-    Hỗ trợ phân tách bằng khoảng trắng, dấu phẩy, gạch đứng `|`, xuống dòng.
+    Hỗ trợ phân tách bằng khoảng trắng, dấu phẩy, gạch ngang nối nốt, gạch đứng `|`, xuống dòng.
     Thời lượng tùy chọn qua `:số` hoặc `*số` hoặc `/số` (ví dụ `C4:2`, `Đô*1.5`, `Sol/2`, `Mi.`).
     """
     if not sequence_text:
         return []
 
-    # Thay dấu gạch nhịp '|' và xuống dòng bằng khoảng trắng; tách dấu phẩy nếu không phải ký hiệu quãng trầm Jianpu
-    cleaned = sequence_text.replace("|", " ").replace("\n", " ").replace(";", " ")
-    cleaned = re.sub(r",\s+", " ", cleaned)
-    raw_tokens = [tok.strip() for tok in cleaned.split() if tok.strip()]
+    raw_tokens = _split_compound_note_tokens(sequence_text)
 
     events: List[Tuple[List[int], float]] = []
     for tok in raw_tokens:
@@ -565,8 +634,8 @@ async def compose_and_render_piano_melody(
             logger.warning(f"LLM soạn nốt piano gặp lỗi nhẹ ({e}), dùng bản nhạc mẫu du dương.")
 
     events = parse_note_sequence(notes_str) if notes_str else []
-    if len(events) < 6:
-        fallback_piece = BUILTIN_PIANO_PIECES["river_flows_in_you"]
+    if len([e for e in events if e[0]]) < 14:
+        fallback_piece = BUILTIN_PIANO_PIECES["lost_princess_piano"]
         events = parse_note_sequence(fallback_piece["notes"])
         tempo = fallback_piece["tempo"]
 

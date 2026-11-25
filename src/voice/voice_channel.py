@@ -12,22 +12,40 @@ from src.voice.japanese_tts import japanese_tts
 
 logger = logging.getLogger("Neneka.VoiceChannel")
 
+
+def resolve_ffmpeg_executable() -> Optional[str]:
+    """Tìm đường dẫn binary FFmpeg hệ thống hoặc FFmpeg tích hợp sẵn trong `imageio-ffmpeg`."""
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        return sys_ffmpeg
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.exists(exe):
+            return exe
+    except Exception:
+        pass
+    return None
+
+
 class VoiceChannelManager:
     """
     Quản lý kết nối Voice Channel và hàng đợi phát âm thanh của Neneka:
-    - Kết nối và rời Voice Channel an toàn.
-    - Hàng đợi phát âm thanh (Audio Queue) tránh xung đột.
-    - Hỗ trợ phát trực tiếp file WAV 48kHz Stereo qua `discord.PCMAudio` NGAY CẢ KHI CHƯA CÀI FFMPEG!
-    - Tự động dùng `discord.FFmpegPCMAudio` cho MP3/M4A/WAV khi máy chủ có cài FFmpeg.
+    - Tự động dùng FFmpeg hệ thống hoặc FFmpeg đóng gói sẵn (`imageio-ffmpeg`) để phát mọi file MP3/M4A/WAV đầy đủ!
+    - Dự phòng `discord.PCMAudio` cho file WAV 48kHz Stereo.
     """
     def __init__(self):
-        self._voice_clients: Dict[int, discord.VoiceClient] = {}  # guild_id -> VoiceClient
-        self._queues: Dict[int, asyncio.Queue] = {}               # guild_id -> Queue[str]
+        self._voice_clients: Dict[int, discord.VoiceClient] = {}
+        self._queues: Dict[int, asyncio.Queue] = {}
         self._is_playing: Dict[int, bool] = {}
 
     @property
+    def ffmpeg_executable(self) -> Optional[str]:
+        return resolve_ffmpeg_executable()
+
+    @property
     def has_ffmpeg(self) -> bool:
-        return shutil.which("ffmpeg") is not None
+        return self.ffmpeg_executable is not None
 
     async def join_channel(self, channel: discord.VoiceChannel) -> Tuple[bool, str, Optional[discord.VoiceClient]]:
         guild_id = channel.guild.id
@@ -68,7 +86,7 @@ class VoiceChannelManager:
             asyncio.create_task(self._process_queue(guild_id))
 
     def _build_wav_pcm_source(self, wav_path: str) -> Optional[discord.PCMAudio]:
-        """Đọc file WAV 48kHz 16-bit Stereo thành nguồn `discord.PCMAudio` không cần FFmpeg."""
+        """Đọc file WAV 48kHz 16-bit Stereo thành nguồn `discord.PCMAudio`."""
         try:
             with wave.open(wav_path, "rb") as wf:
                 if wf.getnchannels() == 2 and wf.getsampwidth() == 2 and wf.getframerate() == 48000:
@@ -93,13 +111,14 @@ class VoiceChannelManager:
                 continue
 
             source = None
-            if self.has_ffmpeg:
-                source = discord.FFmpegPCMAudio(audio_file)
+            ffmpeg_exe = self.ffmpeg_executable
+            if ffmpeg_exe:
+                source = discord.FFmpegPCMAudio(audio_file, executable=ffmpeg_exe)
             elif audio_file.lower().endswith(".wav"):
                 source = self._build_wav_pcm_source(audio_file)
 
             if source is None:
-                logger.warning("FFmpeg chưa được cài đặt trên máy chủ để giải mã định dạng nén (MP3/M4A). Âm thanh vẫn được gửi qua chat player.")
+                logger.warning("Không tìm thấy bộ giải mã âm thanh cho Voice Channel.")
                 continue
 
             finished_event = asyncio.Event()
@@ -117,5 +136,6 @@ class VoiceChannelManager:
                 break
 
         self._is_playing[guild_id] = False
+
 
 voice_channel_mgr = VoiceChannelManager()

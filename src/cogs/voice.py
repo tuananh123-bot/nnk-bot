@@ -12,6 +12,7 @@ from src.voice.japanese_tts import japanese_tts, EMOTION_PRESETS
 from src.voice.voice_channel import voice_channel_mgr
 from src.voice.song_manager import get_song_by_theme_or_random, create_song_embed
 from src.voice.piano_engine import (
+    is_genuine_note_sequence,
     parse_note_sequence,
     synthesize_piano_events_to_wav,
     compose_and_render_piano_melody,
@@ -119,6 +120,13 @@ class PianoTrackSelect(discord.ui.Select):
         idx = int(self.values[0])
         chosen = self.tracks[idx]
         audio_path = await download_piano_track_audio(chosen)
+        if not audio_path or not os.path.exists(audio_path):
+            # Nếu link phụ hết hạn, tự động dạo bản độc tấu Grand Piano 48kHz thay thế để luôn có âm thanh!
+            audio_path, _ = await compose_and_render_piano_melody(
+                chosen.get("title") or self.query, groq_client=groq_client
+            )
+            chosen["audio_ext"] = "mp3" if audio_path.lower().endswith(".mp3") else "wav"
+
         embed = build_piano_track_embed(chosen, self.tracks, self.query)
 
         if audio_path and os.path.exists(audio_path):
@@ -205,33 +213,38 @@ class VoiceCog(commands.Cog):
         sequence_or_theme: str,
         tempo: int = 108,
         guild_id: Optional[int] = None,
-    ) -> Tuple[str, discord.Embed]:
+    ) -> Tuple[str, str, discord.Embed, Optional[discord.ui.View]]:
         """
-        Tạo âm tiết / đánh chuỗi nốt nhạc Piano:
-        - Nếu đầu vào là chuỗi nốt/âm tiết (Đô Rê Mi..., C4 D4 E4..., cảm âm 1 2 3 5 6, hợp âm Cmaj Am): tổng hợp trực tiếp.
-        - Nếu đầu vào là lời mô tả chủ đề/tên bài: nhờ AI soạn nốt và tổng hợp trên đàn Grand Piano 48kHz.
+        Tạo âm tiết / đánh chuỗi nốt nhạc Piano (hoặc tự động chuyển sang tìm bài nhạc Piano đầy đủ nếu người dùng nhập tên bài hát / tên game!):
+        - Nếu là chuỗi nốt/âm tiết thật sự (Đô Rê Mi, Đô-Rê-Mi, C4 E4 G4, 1 2 3 5 6, Cmaj Am): tổng hợp 48kHz Stereo WAV.
+        - Nếu người dùng chỉ gõ đúng 1 nốt đơn lẻ (ví dụ 'Đô' hoặc 'C4'): tự động ngân hợp âm rải nhẹ trên nốt đó để tiếng đàn dày, rõ và vang đẹp thay vì kêu cụt 0.3s!
+        - Nếu người dùng gõ TÊN BÀI HÁT hoặc TÊN GAME (ví dụ 'Lost Princess', 'Re Zero', 'Blue Archive'): tự động tìm đúng bản nhạc Piano Full-Length!
         """
-        events = parse_note_sequence(sequence_or_theme)
-        # Kiểm tra xem chuỗi có thực sự chứa nốt nhạc hợp lệ không
-        valid_note_events = [e for e in events if e[0]]
-        if len(valid_note_events) >= 1 and len(valid_note_events) >= len(sequence_or_theme.split()) * 0.4:
+        clean_input = sequence_or_theme.strip()
+        if is_genuine_note_sequence(clean_input):
+            events = parse_note_sequence(clean_input)
+            valid_notes = [e for e in events if e[0]]
+            # Nếu người dùng chỉ thử gõ 1 âm tiết duy nhất (VD: "Đô"), ngân dài 2.5 phách rõ ràng
+            if len(valid_notes) == 1 and len(events) == 1:
+                root_m = valid_notes[0][0][0]
+                events = [([root_m], 2.5)]
+
             wav_path, meta = await asyncio.to_thread(synthesize_piano_events_to_wav, events, tempo)
-            meta["title"] = "Tổng Hợp Âm Tiết Đại Dương Cầm"
+            meta["title"] = "Tổng Hợp Âm Tiết Đại Dương Cầm (48kHz Stereo)"
             meta["engine"] = "Concert Grand Piano 48kHz Synth"
-            subtitle = f"Chuỗi âm tiết cậu yêu cầu: `{sequence_or_theme[:120]}` 🎹"
-        else:
-            wav_path, meta = await compose_and_render_piano_melody(
-                sequence_or_theme, groq_client=groq_client, prefer_lyria=False
-            )
-            subtitle = f"Biên soạn & độc tấu theo chủ đề: *{sequence_or_theme[:120]}* 🎹"
+            subtitle = f"Chuỗi âm tiết đã kết xuất ({meta['notes_played']} phím ngân): `{clean_input[:120]}` 🎹"
 
-        if guild_id and os.path.exists(wav_path):
-            vc = voice_channel_mgr.get_voice_client(guild_id)
-            if vc and vc.is_connected():
-                await voice_channel_mgr.enqueue_audio(guild_id, wav_path)
+            if guild_id and os.path.exists(wav_path):
+                vc = voice_channel_mgr.get_voice_client(guild_id)
+                if vc and vc.is_connected():
+                    await voice_channel_mgr.enqueue_audio(guild_id, wav_path)
 
-        embed = build_piano_synth_embed(meta, subtitle=subtitle)
-        return wav_path, embed
+            embed = build_piano_synth_embed(meta, subtitle=subtitle)
+            return wav_path, "neneka_piano_notes.wav", embed, None
+
+        # Nếu đầu vào là tên bài hát / tên game -> Tìm đúng bản nhạc Piano đầy đủ!
+        audio_path, fname, embed, view = await self.handle_piano_search(clean_input, guild_id=guild_id)
+        return audio_path or "", fname, embed, view
 
     async def handle_piano_search(
         self,
@@ -309,9 +322,13 @@ class VoiceCog(commands.Cog):
     ):
         await interaction.response.defer()
         guild_id = await self._auto_join_user_voice(interaction.guild, interaction.user)
-        wav_path, embed = await self.handle_piano_notes(sequence, tempo=tempo or 108, guild_id=guild_id)
-        d_file = discord.File(wav_path, filename="neneka_piano_notes.wav")
-        await interaction.followup.send(embed=embed, file=d_file)
+        audio_path, fname, embed, view = await self.handle_piano_notes(sequence, tempo=tempo or 108, guild_id=guild_id)
+        send_kwargs: Dict[str, Any] = {"embed": embed}
+        if audio_path and os.path.exists(audio_path):
+            send_kwargs["file"] = discord.File(audio_path, filename=fname)
+        if view:
+            send_kwargs["view"] = view
+        await interaction.followup.send(**send_kwargs)
 
     @app_commands.command(name="piano_compose", description="✨ Nhờ Neneka sáng tác hoặc độc tấu một bản nhạc Piano theo chủ đề/tâm trạng")
     @app_commands.describe(
@@ -518,8 +535,13 @@ class VoiceCog(commands.Cog):
 
         guild_id = await self._auto_join_user_voice(ctx.guild, ctx.author)
         async with ctx.typing():
-            wav_path, embed = await self.handle_piano_notes(sequence.strip(), tempo=108, guild_id=guild_id)
-            await ctx.reply(embed=embed, file=discord.File(wav_path, filename="neneka_piano_notes.wav"))
+            audio_path, fname, embed, view = await self.handle_piano_notes(sequence.strip(), tempo=108, guild_id=guild_id)
+            send_kwargs: Dict[str, Any] = {"embed": embed}
+            if audio_path and os.path.exists(audio_path):
+                send_kwargs["file"] = discord.File(audio_path, filename=fname)
+            if view:
+                send_kwargs["view"] = view
+            await ctx.reply(**send_kwargs)
 
     @commands.command(name="compose", aliases=["danhdan", "docdan", "solo"])
     async def pcmd_compose(self, ctx: commands.Context, *, theme: Optional[str] = None):

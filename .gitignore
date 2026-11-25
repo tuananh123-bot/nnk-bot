@@ -8,8 +8,10 @@ neneka.db
 run_cli.bat
 run_discord.bat
 temp_audio/
+audio_cache/
 *.mp3
 *.wav
+*.m4a
 .pytest_cache/
 .coverage
 htmlcov/
